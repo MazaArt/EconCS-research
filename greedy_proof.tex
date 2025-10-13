@@ -1,0 +1,133 @@
+\documentclass[12pt]{article}
+\usepackage{amsmath,amssymb,amsthm,geometry}
+\geometry{margin=1in}
+
+\title{Proof of Convergence for the Greedy Voting Mechanism}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{Greedy Proof}
+
+\subsection*{Definitions}
+
+Let 
+\[
+V_k := \text{set of agents left at step } k,
+\]
+with \( V_1 = V \). Define the update rules
+\[
+V_{i+1} = V_i \cap C_i^c, 
+\qquad 
+S_{i+1} = S_i \cap \text{(expired choices)}^c,
+\]
+where \( C_i \) is the set of agents whose preferences were approved on step \( i \).
+
+We aim to prove
+\[
+\lim_{n \to \infty} \Pr\big(\text{Greedy}(V) \in \operatorname{argmax} Q(S)\big) = 1.
+\]
+
+\subsection*{Base Case: \( k = 1 \)}
+
+Since \( V_1 = V \), it follows that
+\[
+\text{Greedy}(V) = \text{AV}(V),
+\]
+by identical process at the first step. Hence, the proposition holds for \( k = 1 \).
+
+\subsection*{Inductive Step}
+
+Assume the proposition holds for some step \( k \). We consider two cases:
+
+\paragraph{Case 1: \( V_{k+1} \neq \varnothing \).}  
+Then
+\[
+\text{Greedy}(V_{k+1}) = \text{AV}(V_{k+1}, S_{k+1}),
+\]
+which, by the inductive hypothesis, satisfies the proposition.
+
+\paragraph{Case 2: \( V_{k+1} = \varnothing \).}  
+Then
+\[
+\text{Greedy}(S_{k+1}) = \text{Uniform}(S_{k+1}),
+\]
+which does not satisfy the property above. We will show that the probability of this case tends to zero as \( n \to \infty \).
+
+\subsection*{Lemma 1}
+
+\begin{lemma}
+\[
+\Pr(\text{Case 2 happens}) \to 0 \quad \text{as } n \to \infty.
+\]
+\end{lemma}
+
+\begin{proof}
+Let \( p_i \) denote the probability that agent \( i \)’s preference is approved at some step, with \( p_i \in (0,1) \).
+Define
+\[
+p^* := \max_{i \in \{1, \ldots, |S|\}} p_i.
+\]
+
+The probability that all agents’ approvals vanish (i.e. \( V_m = \varnothing \)) is given by the union of the disjoint events that each agent fails to approve at all steps:
+\[
+\Pr(V_m = \varnothing) = \Pr\left(\bigcup_{i=1}^{|S|} \text{agent } i \text{ unapproved}\right)
+\leq \sum_{i=1}^{|S|} (1 - p_i)^n.
+\]
+
+Since \( (1 - p_i)^n \leq (1 - p^*)^n \) for all \( i \),
+\[
+\Pr(V_m = \varnothing)
+\leq |S|(1 - p^*)^n.
+\]
+
+Taking the limit,
+\[
+\lim_{n \to \infty} \Pr(V_m = \varnothing)
+\leq \lim_{n \to \infty} |S|(1 - p^*)^n = 0.
+\]
+Thus, as \( n \to \infty \), Case 2 occurs with probability \( 0 \).
+\end{proof}
+
+\subsection*{Lemma 2}
+
+\begin{lemma}
+For \( k = 1 \),
+\[
+\text{GreedyHelper}(S, V, k=1) = \text{ApprovalVoting}(S, V, k=1).
+\]
+\end{lemma}
+
+\begin{proof}
+By definition, at \( k = 1 \), the \texttt{GreedyHelper} procedure selects the element 
+\[
+s^* = \arg\max_{s \in S} \sum_{v \in V} \mathbf{1}\{s \in \text{pref}(v)\},
+\]
+that is, the candidate \( s \in S \) receiving the largest number of approvals from agents in \( V \).
+
+The Approval Voting mechanism likewise chooses
+\[
+s_{\text{AV}} = \arg\max_{s \in S} \sum_{v \in V} \mathbf{1}\{s \in \text{pref}(v)\}.
+\]
+
+Therefore, for \( k = 1 \), the two mechanisms are equivalent:
+\[
+\text{GreedyHelper}(S, V, 1) = \text{ApprovalVoting}(S, V, 1).
+\]
+\end{proof}
+
+\subsection*{Conclusion}
+
+By Lemma 1, as \( n \to \infty \), the inductive step proceeds via Case 1 with probability \( 1 \).  
+By Lemma 2 and the base case, the Greedy mechanism coincides with Approval Voting at the first step.
+
+Therefore, by the \textit{Principle of Mathematical Induction},
+\[
+\lim_{n \to \infty} \Pr\big(\text{Greedy}(V) \in \operatorname{argmax} Q(S)\big) = 1.
+\]
+\hfill\(\Box\)
+
+\end{document}

@@ -1,0 +1,230 @@
+\documentclass{article}
+\usepackage{amsmath,amssymb,amsthm,parskip,geometry}
+\geometry{margin=1in}
+
+\title{Convergence Proofs for Participatory Budgeting Mechanisms}
+\author{Artem Ivaniuk}
+\date{October 13th, 2025}
+
+\begin{document}
+
+\maketitle
+
+\noindent\textbf{Shared Definitions}
+
+\begin{itemize}
+  \item $V$ = set of $n$ agents (voters), assumed to vote independently (i.i.d.).
+  \item $S$ = set of $m$ projects, indexed $1,\dots,m$.
+  \item For each project $j\in S$ there is a ``true'' quality level $\ell_j$.
+  \item For each project $j$, let
+    \[
+      p_j = \Pr(\text{a random voter approves project }j),
+    \]
+    where $p_j = f(\ell_j)$ for some strictly increasing function $f$.  
+    (So better-quality projects have higher approval probabilities.)
+  \item Each project $j$ receives
+    \[
+      A_j = \text{number of approvals project }j\text{ gets from the }n\text{ voters},
+    \]
+    where $A_j \sim \mathrm{Binomial}(n, p_j)$ and $\mathbb{E}[A_j] = n p_j$.
+  \item $S^\star =$ true top-$k$ set by quality:
+    \[
+      S^\star \in \arg\max_{T\subseteq S, |T|=k} Q(T),
+    \]
+    for some underlying quality function $Q(T)$.
+\end{itemize}
+
+
+\pagebreak
+\section*{1. Approval Voting (AV)}
+
+\noindent\textbf{Definitions}
+\begin{itemize}
+  \item $AV$ = Approval Voting rule (selects the $k$ projects with the highest approval counts).
+\end{itemize}
+
+\noindent\textbf{Proposition.}
+\[
+  \Pr\big( Q(AV(V)) \in \arg\max_{T\subseteq S, |T|=k} Q(T) \big)
+  \;\ge\; 1 - m^2 \exp\!\Big(-\tfrac{1}{2} n D^2\Big).
+\]
+
+\noindent\textbf{Proof.}  
+A mistake occurs only if $\exists j\in S^\star, \ell\notin S^\star$ such that $A_\ell \ge A_j$.  
+Fix such a pair $(j,\ell)$ and define $D' := A_j - A_\ell$. Then $\mathbb{E}[D'] = n(p_j - p_\ell) \ge nD$.  
+
+For each voter $i$, define
+\[
+  X_i := \mathbf{1}\{\text{voter }i\text{ approves } j\} - \mathbf{1}\{\text{voter }i\text{ approves } \ell\}.
+\]
+Then $X_i \in [-1,1]$ and $D' = \sum_{i=1}^n X_i$.  
+Applying Hoeffding’s inequality:
+\[
+  \Pr(D' \le 0)
+  \le \exp\!\Big(-\tfrac{1}{2} n D^2\Big).
+\]
+By the union bound over all pairs $(j,\ell)$,
+\[
+  \Pr(S_{AV} \neq S^\star) \le m^2 \exp\!\Big(-\tfrac{1}{2} n D^2\Big).
+\]
+Hence
+\[
+  \Pr(S_{AV} = S^\star) \ge 1 - m^2 \exp\!\Big(-\tfrac{1}{2} n D^2\Big),
+\]
+which tends to $1$ exponentially fast as $n\to\infty$. \(\Box\)
+
+\pagebreak
+\section*{2. Proportional Approval Voting (PAV)}
+
+\noindent\textbf{Definitions.}
+\begin{itemize}
+  \item $PAV$ = Proportional Approval Voting, selecting $T\subseteq S$ with $|T|=k$ maximizing its PAV score.
+  \item For a subset $T\subseteq S$, define per-voter contribution
+    \[
+      \phi_T(A_i) = \sum_{t=1}^{|T\cap A_i|} \frac{1}{t},
+    \]
+    and total score
+    \[
+      \mathrm{Score}_n(T) = \sum_{i=1}^n \phi_T(A_i).
+    \]
+  \item Expected per-voter score: $s(T) = \mathbb{E}[\phi_T(A_i)]$.
+  \item Let $\mathcal{T}_k = \{T \subseteq S : |T|=k\}$ and define
+    \[
+      D_s = \min_{T, T'\in\mathcal{T}_k,\;T'\neq T} |s(T) - s(T')|.
+    \]
+  \item Define the minimum approval-probability gap between any true winner and any non-winner as
+    \[
+      D := \min_{j\in S^\star,\;\ell\notin S^\star} (p_j - p_\ell),
+    \]
+    and assume $D>0$ (i.e., no exact ties).
+\end{itemize}
+
+\noindent\textbf{Proposition.}  
+Assume $D_s > 0$. Then
+\[
+  \Pr\big(PAV(V) \in \arg\max_{T\in\mathcal{T}_k} s(T)\big)
+  \;\ge\; 1 - \binom{m}{k} \exp\!\Big(-\frac{2n D_s^2}{(H_k)^2}\Big),
+\]
+where \(H_k = 1 + \tfrac12 + \cdots + \tfrac{1}{k}\).
+
+\noindent\textbf{Proof.}  
+Each $\phi_T(A_i)\in [0, H_k]$.  
+By Hoeffding’s inequality, for each fixed $T$ and $\varepsilon>0$:
+\[
+  \Pr\big(|\mathrm{Score}_n(T) - n s(T)| \ge n\varepsilon\big)
+  \le 2\exp\!\Big(-\frac{2n\varepsilon^2}{(H_k)^2}\Big).
+\]
+Applying the union bound over $\binom{m}{k}$ possible $T$:
+\[
+  \Pr\!\big(\forall T\in\mathcal{T}_k:\;|\mathrm{Score}_n(T) - n s(T)| < n\varepsilon\big)
+  \ge 1 - 2\binom{m}{k}\exp\!\Big(-\frac{2n\varepsilon^2}{(H_k)^2}\Big).
+\]
+Choosing $\varepsilon = D_s/2$, all empirical maximizers coincide with population maximizers, since
+\[
+  \mathrm{Score}_n(T^\star) - \mathrm{Score}_n(T) \ge n(s(T^\star)-s(T)-2\varepsilon) \ge 0.
+\]
+Hence
+\[
+  \Pr(PAV(V) = T^\star)
+  \ge 1 - \binom{m}{k}\exp\!\Big(-\frac{2n D_s^2}{(H_k)^2}\Big),
+\]
+which tends to $1$ exponentially fast as $n\to\infty$. \(\Box\)
+
+\pagebreak
+\section*{3. Greedy Voting}
+
+\noindent\textbf{Definitions.}
+\begin{align*}
+V_k &:= \text{set of agents remaining at step } k, \quad V_1 = V, \\
+V_{i+1} &= V_i \cap C_i^c, \qquad S_{i+1} = S_i \cap \text{(expired choices)}^c,
+\end{align*}
+where $C_i$ is the set of agents whose preferences were approved at step $i$.  
+We aim to show
+\[
+\lim_{n \to \infty} \Pr\big(\text{Greedy}(V) \in \operatorname{argmax} Q(S)\big) = 1.
+\]
+
+\noindent\textbf{Base Case ($k=1$).}  
+At $k=1$, $\text{Greedy}(V) = \text{AV}(V)$, so the result holds by the AV proposition.
+
+\noindent\textbf{Inductive Step.}  
+Assume the proposition holds for some step \( k \). We consider two cases:
+
+\paragraph{Case 1: \( V_{k+1} \neq \varnothing \).}  
+Then
+\[
+\text{Greedy}(V_{k+1}) = \text{AV}(V_{k+1}, S_{k+1}),
+\]
+which, by the inductive hypothesis, satisfies the proposition.
+
+\paragraph{Case 2: \( V_{k+1} = \varnothing \).}  
+Then
+\[
+\text{Greedy}(S_{k+1}) = \text{Uniform}(S_{k+1}),
+\]
+
+\noindent\textbf{Lemma 1}
+
+\[
+\Pr(\text{Case 2 happens}) \to 0 \quad \text{as } n \to \infty.
+\]
+
+\begin{proof}
+Let \( p_i \) denote the probability that agent \( i \)’s preference is approved at some step, with \( p_i \in (0,1) \).
+Define
+\[
+p^* := \max_{i \in \{1, \ldots, |S|\}} p_i.
+\]
+
+The probability that all agents’ approvals vanish (i.e. \( V_m = \varnothing \)) is given by the union of the disjoint events that each agent fails to approve at all steps:
+\[
+\Pr(V_m = \varnothing) = \Pr\left(\bigcup_{i=1}^{|S|} \text{agent } i \text{ unapproved}\right)
+\leq \sum_{i=1}^{|S|} (1 - p_i)^n.
+\]
+
+Since \( (1 - p_i)^n \leq (1 - p^*)^n \) for all \( i \),
+\[
+\Pr(V_m = \varnothing)
+\leq |S|(1 - p^*)^n.
+\]
+
+Taking the limit,
+\[
+\lim_{n \to \infty} \Pr(V_m = \varnothing)
+\leq \lim_{n \to \infty} |S|(1 - p^*)^n = 0.
+\]
+Thus, as \( n \to \infty \), Case 2 occurs with probability \( 0 \).
+\end{proof}
+
+\noindent\textbf{Lemma 2}
+
+For \( k = 1 \),
+\[
+\text{GreedyHelper}(S, V, k=1) = \text{ApprovalVoting}(S, V, k=1).
+\]
+
+\begin{proof}
+By definition, at \( k = 1 \), GreedyHelper selects the element 
+\[
+s^* = \arg\max_{s \in S} \sum_{v \in V} \mathbf{1}\{s \in \text{pref}(v)\},
+\]
+that is, the candidate \( s \in S \) receiving the largest number of approvals from agents in \( V \).
+
+The Approval Voting mechanism likewise chooses
+\[
+s_{\text{AV}} = \arg\max_{s \in S} \sum_{v \in V} \mathbf{1}\{s \in \text{pref}(v)\}.
+\]
+
+Therefore, for \( k = 1 \), the two mechanisms are equivalent:
+\[
+\text{GreedyHelper}(S, V, 1) = \text{ApprovalVoting}(S, V, 1).
+\]
+\end{proof}
+\noindent\textbf{Conclusion.}  
+By Lemmas 1–2 and induction,
+\[
+\lim_{n \to \infty} \Pr\big(\text{Greedy}(V) \in \operatorname{argmax} Q(S)\big) = 1.
+\]
+\(\Box\)
+
+\end{document}
