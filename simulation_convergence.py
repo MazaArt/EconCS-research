@@ -90,8 +90,10 @@ def run_convergence_analysis(n_values: List[int], m: int, alpha: float,
 
 def plot_convergence(n_values: List[int], results: dict, rule_names: List[str],
                      m: int, alpha: float, budget: float, utility_type: str,
-                     show_confidence: bool = True, confidence_level: float = 0.95):
+                     show_confidence: bool = True, confidence_level: float = 0.95,
+                     filename: str = None):
     """Plot convergence analysis with error bars and confidence intervals."""
+    import os
     n_rules = len(rule_names)
     n_cols = 2
     n_rows = (n_rules + n_cols - 1) // n_cols
@@ -163,9 +165,13 @@ def plot_convergence(n_values: List[int], results: dict, rule_names: List[str],
                  fontsize=14, fontweight='bold', y=0.995)
     plt.tight_layout(rect=[0, 0, 1, 0.98])
     
-    filename = f'convergence_m{m}_alpha{alpha}_B{budget}_{utility_type}.png'
-    plt.savefig(filename, dpi=300, bbox_inches='tight')
-    print(f"\nPlot saved as '{filename}'")
+    if filename is None:
+        filename = f'convergence_m{m}_alpha{alpha}_B{budget}_{utility_type}.png'
+    # Save to plots/simulation_convergence folder
+    os.makedirs('plots/simulation_convergence', exist_ok=True)
+    filepath = os.path.join('plots/simulation_convergence', filename)
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    print(f"\nPlot saved as '{filepath}'")
     plt.show()
 
 
@@ -194,7 +200,7 @@ if __name__ == "__main__":
     print(f"  utility type: {utility_type}")
     print("=" * 60)
     
-    # Run simulation
+    # Run simulation for original n values
     results, rule_names = run_convergence_analysis(
         n_values, m, alpha, budget, quality_range,
         utility_type, num_samples=30, num_trials=10  # More trials for better statistics
@@ -209,6 +215,27 @@ if __name__ == "__main__":
         print("Warning: scipy not available, plotting without confidence intervals")
         plot_convergence(n_values, results, rule_names, m, alpha, budget, utility_type,
                         show_confidence=False, confidence_level=0.95)
+    
+    # Run finer-grained simulation for small n values
+    print("\n" + "=" * 60)
+    print("Running finer-grained convergence analysis (n = 5, 10, 20, 50, 100, 250)")
+    print("=" * 60)
+    n_values_fine = [5, 10, 20, 50, 100, 250]
+    results_fine, rule_names_fine = run_convergence_analysis(
+        n_values_fine, m, alpha, budget, quality_range,
+        utility_type, num_samples=30, num_trials=10
+    )
+    
+    # Plot finer-grained results with modified filename
+    filename_fine = f'convergence_m{m}_alpha{alpha}_B{budget}_{utility_type}_fine.png'
+    try:
+        from scipy import stats
+        plot_convergence(n_values_fine, results_fine, rule_names_fine, m, alpha, budget, utility_type,
+                        show_confidence=True, confidence_level=0.95, filename=filename_fine)
+    except ImportError:
+        print("Warning: scipy not available, plotting without confidence intervals")
+        plot_convergence(n_values_fine, results_fine, rule_names_fine, m, alpha, budget, utility_type,
+                        show_confidence=False, confidence_level=0.95, filename=filename_fine)
     
     print("\nSimulation complete!")
 

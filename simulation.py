@@ -540,8 +540,9 @@ def run_simulation(n_values: List[int], m: int, alpha: float, budget: float,
     return results
 
 
-def plot_results(n_values: List[int], results: dict, title: str = "Informed Ratio vs Number of Agents"):
+def plot_results(n_values: List[int], results: dict, title: str = "Informed Ratio vs Number of Agents", filename: str = None):
     """Plot informed ratios for different voting rules."""
+    import os
     plt.figure(figsize=(10, 6))
     
     for rule_name, ratios in results.items():
@@ -554,8 +555,13 @@ def plot_results(n_values: List[int], results: dict, title: str = "Informed Rati
     plt.grid(True, alpha=0.3)
     plt.ylim([0, 1.1])
     plt.tight_layout()
-    plt.savefig('informed_ratio_vs_n.png', dpi=300)
-    print("Plot saved as 'informed_ratio_vs_n.png'")
+    if filename is None:
+        filename = 'informed_ratio_vs_n.png'
+    # Save to plots/simulation folder
+    os.makedirs('plots/simulation', exist_ok=True)
+    filepath = os.path.join('plots/simulation', filename)
+    plt.savefig(filepath, dpi=300)
+    print(f"Plot saved as '{filepath}'")
     plt.show()
 
 
@@ -584,13 +590,26 @@ if __name__ == "__main__":
     print(f"  utility type: {utility_type}")
     print("=" * 60)
     
-    # Run simulation
+    # Run simulation for original n values
     results = run_simulation(n_values, m, alpha, budget, quality_range, 
                            utility_type, num_samples=30, num_trials=5)
     
     # Plot results
     plot_results(n_values, results, 
                 title=f"Informed Ratio vs n (m={m}, α={alpha}, B={budget})")
+    
+    # Run finer-grained simulation for small n values
+    print("\n" + "=" * 60)
+    print("Running finer-grained simulation (n = 5, 10, 20, 50, 100, 250)")
+    print("=" * 60)
+    n_values_fine = [5, 10, 20, 50, 100, 250]
+    results_fine = run_simulation(n_values_fine, m, alpha, budget, quality_range, 
+                                 utility_type, num_samples=30, num_trials=5)
+    
+    # Plot finer-grained results
+    plot_results(n_values_fine, results_fine, 
+                title=f"Informed Ratio vs n (Fine-grained, m={m}, α={alpha}, B={budget})",
+                filename='informed_ratio_vs_n_fine.png')
     
     print("\nSimulation complete!")
 

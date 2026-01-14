@@ -86,8 +86,9 @@ def run_unit_vs_general_comparison(n_values: List[int], m: int, alpha_values: Li
 
 def plot_unit_vs_general(n_values: List[int], results: dict, rule_names: List[str],
                          alpha_values: List[float], m: int, budget: float,
-                         utility_type: str):
+                         utility_type: str, filename: str = None):
     """Plot unit cost vs general cost comparison."""
+    import os
     n_plots = len(rule_names)
     n_cols = 2
     n_rows = (n_plots + n_cols - 1) // n_cols
@@ -124,9 +125,13 @@ def plot_unit_vs_general(n_values: List[int], results: dict, rule_names: List[st
                  fontsize=14, fontweight='bold', y=0.995)
     plt.tight_layout(rect=[0, 0, 1, 0.98])
     
-    filename = f'unit_vs_general_cost_m{m}_B{budget}_{utility_type}.png'
-    plt.savefig(filename, dpi=300, bbox_inches='tight')
-    print(f"\nPlot saved as '{filename}'")
+    if filename is None:
+        filename = f'unit_vs_general_cost_m{m}_B{budget}_{utility_type}.png'
+    # Save to plots/simulation_unit_vs_general folder
+    os.makedirs('plots/simulation_unit_vs_general', exist_ok=True)
+    filepath = os.path.join('plots/simulation_unit_vs_general', filename)
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    print(f"\nPlot saved as '{filepath}'")
     plt.show()
 
 
@@ -155,7 +160,7 @@ if __name__ == "__main__":
     print(f"  utility type: {utility_type}")
     print("=" * 60)
     
-    # Run simulation
+    # Run simulation for original n values
     results, rule_names = run_unit_vs_general_comparison(
         n_values, m, alpha_values, budget, quality_range,
         utility_type, num_samples=30, num_trials=5
@@ -163,6 +168,20 @@ if __name__ == "__main__":
     
     # Plot results
     plot_unit_vs_general(n_values, results, rule_names, alpha_values, m, budget, utility_type)
+    
+    # Run finer-grained simulation for small n values
+    print("\n" + "=" * 60)
+    print("Running finer-grained unit vs general comparison (n = 5, 10, 20, 50, 100, 250)")
+    print("=" * 60)
+    n_values_fine = [5, 10, 20, 50, 100, 250]
+    results_fine, rule_names_fine = run_unit_vs_general_comparison(
+        n_values_fine, m, alpha_values, budget, quality_range,
+        utility_type, num_samples=30, num_trials=5
+    )
+    
+    # Plot finer-grained results
+    filename_fine = f'unit_vs_general_cost_m{m}_B{budget}_{utility_type}_fine.png'
+    plot_unit_vs_general(n_values_fine, results_fine, rule_names_fine, alpha_values, m, budget, utility_type, filename=filename_fine)
     
     print("\nSimulation complete!")
 

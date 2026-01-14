@@ -87,8 +87,9 @@ def run_utility_comparison(n_values: List[int], m: int, alpha: float,
 
 
 def plot_utility_comparison(n_values: List[int], results: dict, rule_names: List[str],
-                           m: int, alpha: float, budget: float):
+                           m: int, alpha: float, budget: float, filename: str = None):
     """Plot comparison between normal and cost-proportional utility functions."""
+    import os
     n_rules = len(rule_names)
     n_cols = 2
     n_rows = (n_rules + n_cols - 1) // n_cols
@@ -128,9 +129,13 @@ def plot_utility_comparison(n_values: List[int], results: dict, rule_names: List
                  fontsize=14, fontweight='bold', y=0.995)
     plt.tight_layout(rect=[0, 0, 1, 0.98])
     
-    filename = f'utility_comparison_m{m}_alpha{alpha}_B{budget}.png'
-    plt.savefig(filename, dpi=300, bbox_inches='tight')
-    print(f"\nPlot saved as '{filename}'")
+    if filename is None:
+        filename = f'utility_comparison_m{m}_alpha{alpha}_B{budget}.png'
+    # Save to plots/simulation_utility_comparison folder
+    os.makedirs('plots/simulation_utility_comparison', exist_ok=True)
+    filepath = os.path.join('plots/simulation_utility_comparison', filename)
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    print(f"\nPlot saved as '{filepath}'")
     plt.show()
 
 
@@ -157,7 +162,7 @@ if __name__ == "__main__":
     print(f"  quality range: {quality_range}")
     print("=" * 60)
     
-    # Run simulation
+    # Run simulation for original n values
     results, rule_names = run_utility_comparison(
         n_values, m, alpha, budget, quality_range,
         num_samples=30, num_trials=5
@@ -165,6 +170,20 @@ if __name__ == "__main__":
     
     # Plot results
     plot_utility_comparison(n_values, results, rule_names, m, alpha, budget)
+    
+    # Run finer-grained simulation for small n values
+    print("\n" + "=" * 60)
+    print("Running finer-grained utility comparison (n = 5, 10, 20, 50, 100, 250)")
+    print("=" * 60)
+    n_values_fine = [5, 10, 20, 50, 100, 250]
+    results_fine, rule_names_fine = run_utility_comparison(
+        n_values_fine, m, alpha, budget, quality_range,
+        num_samples=30, num_trials=5
+    )
+    
+    # Plot finer-grained results
+    filename_fine = f'utility_comparison_m{m}_alpha{alpha}_B{budget}_fine.png'
+    plot_utility_comparison(n_values_fine, results_fine, rule_names_fine, m, alpha, budget, filename=filename_fine)
     
     print("\nSimulation complete!")
 
