@@ -1,0 +1,596 @@
+"""
+Simulation for Informed Participatory Budgeting
+
+This module implements voting rules (AV, PAV, Greedy Cover, MES, Phragmen),
+simulates PB instances, and calculates informed ratios.
+"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+from itertools import product
+from typing import List, Tuple, Set, Callable
+import warnings
+warnings.filterwarnings('ignore')
+
+
+# ============================================================================
+# Utility Functions
+# ============================================================================
+
+def normal_utility(winning_set: Set[int], qualities: np.ndarray) -> float:
+    """Normal utility: sum of qualities."""
+    return sum(qualities[j] for j in winning_set)
+
+
+def cost_proportional_utility(winning_set: Set[int], qualities: np.ndarray, costs: np.ndarray) -> float:
+    """Cost-proportional utility: sum of cost * quality."""
+    return sum(costs[j] * qualities[j] for j in winning_set)
+
+
+# ============================================================================
+# Voting Rules
+# ============================================================================
+
+def approval_voting(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    AV: Select alternatives in descending order of approval counts.
+    
+    Args:
+        votes: (n, m) binary array, votes[i, j] = 1 if agent i approves alternative j
+        costs: (m,) array of costs
+        budget: budget constraint
+    
+    Returns:
+        Set of winning alternative indices
+    """
+    m = len(costs)
+    approval_counts = votes.sum(axis=0)
+    
+    # Sort by approval count (descending), break ties by index
+    alternatives = sorted(range(m), key=lambda j: (approval_counts[j], -j), reverse=True)
+    
+    winning_set = set()
+    remaining_budget = budget
+    
+    for j in alternatives:
+        if costs[j] <= remaining_budget:
+            winning_set.add(j)
+            remaining_budget -= costs[j]
+    
+    return winning_set
+
+
+def proportional_approval_voting(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    PAV: Maximizes sum over agents of 1 + 1/2 + ... + 1/k for k approved winners.
+    
+    This is computationally expensive, so we use a greedy approximation for large instances.
+    """
+    n, m = votes.shape
+    
+    # For small instances, use exact enumeration
+    if m <= 15:
+        best_score = -np.inf
+        best_set = set()
+        
+        # Try all subsets (feasible for small m)
+        for r in range(1, min(2**m, 10000)):  # Limit to avoid explosion
+            subset = set()
+            for j in range(m):
+                if (r >> j) & 1:
+                    subset.add(j)
+            
+            total_cost = sum(costs[j] for j in subset)
+            if total_cost <= budget:
+                # Calculate PAV score
+                score = 0.0
+                for i in range(n):
+                    approved_count = sum(votes[i, j] for j in subset)
+                    for t in range(1, approved_count + 1):
+                        score += 1.0 / t
+                
+                if score > best_score:
+                    best_score = score
+                    best_set = subset
+        
+        return best_set if best_set else set()
+    else:
+        # For larger instances, use greedy approximation
+        return greedy_cover(votes, costs, budget)  # Fallback to GC
+
+
+def greedy_cover(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    Greedy Cover: Select alternatives with highest approval_count / cost ratio.
+    
+    Args:
+        votes: (n, m) binary array
+        costs: (m,) array of costs
+        budget: budget constraint
+    
+    Returns:
+        Set of winning alternative indices
+    """
+    m = len(costs)
+    approval_counts = votes.sum(axis=0)
+    
+    # Calculate ratios (approval count / cost)
+    ratios = np.zeros(m)
+    for j in range(m):
+        if costs[j] > 0:
+            ratios[j] = approval_counts[j] / costs[j]
+        else:
+            ratios[j] = np.inf
+    
+    winning_set = set()
+    remaining_budget = budget
+    remaining = set(range(m))
+    
+    while remaining:
+        # Find alternative with highest ratio
+        best_j = None
+        best_ratio = -1
+        
+        for j in remaining:
+            if costs[j] <= remaining_budget and ratios[j] > best_ratio:
+                best_ratio = ratios[j]
+                best_j = j
+        
+        if best_j is None:
+            break
+        
+        winning_set.add(best_j)
+        remaining_budget -= costs[best_j]
+        remaining.remove(best_j)
+    
+    return winning_set
+
+
+def method_of_equal_shares(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    MES: Each agent gets budget share B/n, alternatives funded when sum of contributions >= cost.
+    
+    Args:
+        votes: (n, m) binary array
+        costs: (m,) array of costs
+        budget: budget constraint
+    
+    Returns:
+        Set of winning alternative indices
+    """
+    n, m = votes.shape
+    budget_shares = np.full(n, budget / n)
+    winning_set = set()
+    funded = set()
+    
+    # Iteratively select alternatives
+    max_iterations = m  # Safety limit
+    for _ in range(max_iterations):
+        best_j = None
+        min_payment = np.inf
+        
+        # Find alternative that can be funded with minimum payment per agent
+        for j in range(m):
+            if j in funded:
+                continue
+            
+            approvers = [i for i in range(n) if votes[i, j] == 1]
+            if not approvers:
+                continue
+            
+            # Calculate minimum payment needed per approver
+            total_available = sum(budget_shares[i] for i in approvers)
+            
+            if total_available >= costs[j]:
+                payment_per_agent = costs[j] / len(approvers)
+                if payment_per_agent < min_payment:
+                    min_payment = payment_per_agent
+                    best_j = j
+        
+        if best_j is None:
+            break
+        
+        # Fund the alternative
+        approvers = [i for i in range(n) if votes[i, best_j] == 1]
+        payment_per_agent = costs[best_j] / len(approvers)
+        
+        for i in approvers:
+            if budget_shares[i] >= payment_per_agent:
+                budget_shares[i] -= payment_per_agent
+        
+        winning_set.add(best_j)
+        funded.add(best_j)
+    
+    return winning_set
+
+
+def phragmen(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    Phragmen: Maintains loads for agents, selects alternative minimizing max load.
+    
+    Args:
+        votes: (n, m) binary array
+        costs: (m,) array of costs
+        budget: budget constraint
+    
+    Returns:
+        Set of winning alternative indices
+    """
+    n, m = votes.shape
+    loads = np.zeros(n)
+    winning_set = set()
+    remaining = set(range(m))
+    
+    while remaining:
+        best_j = None
+        min_max_load = np.inf
+        
+        for j in remaining:
+            total_cost = sum(costs[k] for k in winning_set) + costs[j]
+            if total_cost > budget:
+                continue
+            
+            # Calculate what max load would be after adding j
+            approvers = [i for i in range(n) if votes[i, j] == 1]
+            if not approvers:
+                continue
+            
+            new_loads = loads.copy()
+            load_increase = costs[j] / len(approvers)
+            for i in approvers:
+                new_loads[i] += load_increase
+            
+            max_load = new_loads.max()
+            
+            if max_load < min_max_load:
+                min_max_load = max_load
+                best_j = j
+        
+        if best_j is None:
+            break
+        
+        # Add alternative and update loads
+        approvers = [i for i in range(n) if votes[i, best_j] == 1]
+        load_increase = costs[best_j] / len(approvers)
+        for i in approvers:
+            loads[i] += load_increase
+        
+        winning_set.add(best_j)
+        remaining.remove(best_j)
+    
+    return winning_set
+
+
+# ============================================================================
+# Knapsack Solver (Optimal Set)
+# ============================================================================
+
+def knapsack_optimal(qualities: np.ndarray, costs: np.ndarray, budget: float, 
+                     use_cost_proportional: bool = False) -> Tuple[Set[int], float]:
+    """
+    Find optimal winning set using exhaustive search (for small m) or greedy (for large m).
+    
+    Args:
+        qualities: (m,) array of qualities
+        costs: (m,) array of costs
+        budget: budget constraint
+        use_cost_proportional: if True, use cost-proportional utility
+    
+    Returns:
+        (optimal_set, optimal_utility) tuple
+    """
+    m = len(costs)
+    
+    # For small instances, use exhaustive search
+    if m <= 20:
+        best_utility = -np.inf
+        best_set = set()
+        
+        for r in range(1, 2**m):
+            subset = set()
+            total_cost = 0.0
+            for j in range(m):
+                if (r >> j) & 1:
+                    subset.add(j)
+                    total_cost += costs[j]
+            
+            if total_cost <= budget:
+                if use_cost_proportional:
+                    utility = sum(costs[j] * qualities[j] for j in subset)
+                else:
+                    utility = sum(qualities[j] for j in subset)
+                
+                if utility > best_utility:
+                    best_utility = utility
+                    best_set = subset.copy()
+        
+        return best_set if best_set else set(), max(best_utility, 0.0)
+    else:
+        # For larger instances, use greedy approximation
+        if use_cost_proportional:
+            # For cost-proportional utility, sort by total value (cost * quality)
+            values = np.array([costs[j] * qualities[j] for j in range(m)])
+            sorted_indices = np.argsort(values)[::-1]
+        else:
+            # For normal utility, sort by quality/cost ratio
+            ratios = np.array([qualities[j] / costs[j] if costs[j] > 0 else qualities[j] 
+                              for j in range(m)])
+            sorted_indices = np.argsort(ratios)[::-1]
+        
+        winning_set = set()
+        remaining_budget = budget
+        
+        for j in sorted_indices:
+            if costs[j] <= remaining_budget:
+                winning_set.add(j)
+                remaining_budget -= costs[j]
+        
+        if use_cost_proportional:
+            utility = sum(costs[j] * qualities[j] for j in winning_set)
+        else:
+            utility = sum(qualities[j] for j in winning_set)
+        
+        return winning_set, utility
+
+
+# ============================================================================
+# Instance Generation
+# ============================================================================
+
+def generate_instance(n: int, m: int, alpha: float, budget: float, 
+                     quality_range: Tuple[int, int], seed: int = None) -> dict:
+    """
+    Generate a random PB instance.
+    
+    Args:
+        n: number of agents
+        m: number of alternatives
+        alpha: cost ratio (max cost / min cost)
+        budget: budget constraint
+        quality_range: (min_quality, max_quality)
+        seed: random seed
+    
+    Returns:
+        Dictionary with instance parameters
+    """
+    if seed is not None:
+        np.random.seed(seed)
+    
+    # Generate costs: min = 1, max = alpha
+    if alpha == 1.0:
+        costs = np.ones(m)
+    else:
+        costs = np.random.uniform(1.0, alpha, m)
+    costs = np.round(costs, 2)
+    
+    # Ensure at least one cost = 1 and one = alpha
+    costs[0] = 1.0
+    if m > 1:
+        costs[-1] = alpha
+    
+    # Generate qualities (binary for simplicity, but can extend)
+    min_qual, max_qual = quality_range
+    qualities = np.random.randint(min_qual, max_qual + 1, m)
+    
+    # Generate common priors (probability that quality = max_qual)
+    qual_priors = np.random.uniform(0.3, 0.9, m)
+    
+    # Generate signal distributions
+    # For each alternative j and quality q, prob of positive signal
+    signal_dists = {}
+    for j in range(m):
+        for q in range(min_qual, max_qual + 1):
+            # Higher quality -> higher signal probability
+            base_prob = 0.5 + 0.3 * (q - min_qual) / (max_qual - min_qual) if max_qual > min_qual else 0.6
+            signal_dists[(j, q)] = np.random.uniform(base_prob - 0.2, base_prob + 0.2)
+            signal_dists[(j, q)] = np.clip(signal_dists[(j, q)], 0.1, 0.9)
+    
+    # Generate signals for each agent
+    signals = np.zeros((n, m), dtype=int)
+    for i in range(n):
+        for j in range(m):
+            # Sample quality from prior
+            qual = max_qual if np.random.random() < qual_priors[j] else min_qual
+            # Sample signal based on quality
+            signal_prob = signal_dists[(j, qual)]
+            signals[i, j] = 1 if np.random.random() < signal_prob else 0
+    
+    return {
+        'n': n,
+        'm': m,
+        'costs': costs,
+        'budget': budget,
+        'qualities': qualities,
+        'qual_priors': qual_priors,
+        'signal_dists': signal_dists,
+        'signals': signals,
+        'quality_range': quality_range
+    }
+
+
+# ============================================================================
+# Informed Ratio Calculation
+# ============================================================================
+
+def calculate_informed_ratio(instance: dict, voting_rule: Callable, 
+                            use_cost_proportional: bool = False, 
+                            num_samples: int = 100) -> float:
+    """
+    Calculate informed ratio for a voting rule.
+    
+    The informed ratio is:
+    E[utility(voting_rule_output)] / E[max_utility(optimal_set)]
+    
+    We approximate this by averaging over multiple random signal realizations.
+    
+    Args:
+        instance: instance dictionary
+        voting_rule: function(votes, costs, budget) -> winning_set
+        use_cost_proportional: if True, use cost-proportional utility
+        num_samples: number of samples for Monte Carlo
+    
+    Returns:
+        Informed ratio
+    """
+    n = instance['n']
+    m = instance['m']
+    costs = instance['costs']
+    budget = instance['budget']
+    qual_priors = instance['qual_priors']
+    signal_dists = instance['signal_dists']
+    quality_range = instance['quality_range']
+    min_qual, max_qual = quality_range
+    
+    total_voting_utility = 0.0
+    total_optimal_utility = 0.0
+    
+    # Sample over quality realizations and signal realizations
+    for sample in range(num_samples):
+        # Sample quality vector
+        qualities = np.zeros(m, dtype=int)
+        for j in range(m):
+            qualities[j] = max_qual if np.random.random() < qual_priors[j] else min_qual
+        
+        # Sample signals for all agents (informative voting: votes = signals)
+        votes = np.zeros((n, m), dtype=int)
+        for i in range(n):
+            for j in range(m):
+                signal_prob = signal_dists[(j, qualities[j])]
+                votes[i, j] = 1 if np.random.random() < signal_prob else 0
+        
+        # Get winning set from voting rule
+        winning_set = voting_rule(votes, costs, budget)
+        
+        # Calculate utility
+        if use_cost_proportional:
+            voting_utility = sum(costs[j] * qualities[j] for j in winning_set)
+        else:
+            voting_utility = sum(qualities[j] for j in winning_set)
+        
+        # Get optimal set
+        optimal_set, optimal_utility = knapsack_optimal(qualities, costs, budget, use_cost_proportional)
+        
+        total_voting_utility += voting_utility
+        total_optimal_utility += max(optimal_utility, 1e-10)  # Avoid division by zero
+    
+    return total_voting_utility / total_optimal_utility if total_optimal_utility > 0 else 0.0
+
+
+# ============================================================================
+# Simulation and Plotting
+# ============================================================================
+
+def run_simulation(n_values: List[int], m: int, alpha: float, budget: float,
+                   quality_range: Tuple[int, int], utility_type: str = 'normal',
+                   num_samples: int = 50, num_trials: int = 10) -> dict:
+    """
+    Run simulation for different values of n.
+    
+    Args:
+        n_values: list of n (number of agents) to test
+        m: number of alternatives
+        alpha: cost ratio
+        budget: budget constraint
+        quality_range: (min_quality, max_quality)
+        utility_type: 'normal' or 'cost_proportional'
+        num_samples: number of samples per trial
+        num_trials: number of independent trials
+    
+    Returns:
+        Dictionary with results for each voting rule
+    """
+    use_cost_proportional = (utility_type == 'cost_proportional')
+    
+    voting_rules = {
+        'AV': approval_voting,
+        'GC': greedy_cover,
+        'MES': method_of_equal_shares,
+        'Phragmen': phragmen
+    }
+    
+    # Try PAV for small instances
+    if m <= 12:
+        voting_rules['PAV'] = proportional_approval_voting
+    
+    results = {rule: [] for rule in voting_rules.keys()}
+    
+    for n in n_values:
+        print(f"Running simulation for n={n}...")
+        rule_ratios = {rule: [] for rule in voting_rules.keys()}
+        
+        for trial in range(num_trials):
+            # Generate instance
+            instance = generate_instance(n, m, alpha, budget, quality_range, seed=trial)
+            
+            # Calculate informed ratio for each rule
+            for rule_name, rule_func in voting_rules.items():
+                try:
+                    ratio = calculate_informed_ratio(instance, rule_func, use_cost_proportional, num_samples)
+                    rule_ratios[rule_name].append(ratio)
+                except Exception as e:
+                    print(f"  Error in {rule_name}: {e}")
+                    rule_ratios[rule_name].append(0.0)
+        
+        # Average over trials
+        for rule_name in voting_rules.keys():
+            avg_ratio = np.mean(rule_ratios[rule_name])
+            results[rule_name].append(avg_ratio)
+            print(f"  {rule_name}: {avg_ratio:.4f}")
+    
+    return results
+
+
+def plot_results(n_values: List[int], results: dict, title: str = "Informed Ratio vs Number of Agents"):
+    """Plot informed ratios for different voting rules."""
+    plt.figure(figsize=(10, 6))
+    
+    for rule_name, ratios in results.items():
+        plt.plot(n_values, ratios, marker='o', label=rule_name, linewidth=2)
+    
+    plt.xlabel('Number of Agents (n)', fontsize=12)
+    plt.ylabel('Informed Ratio', fontsize=12)
+    plt.title(title, fontsize=14)
+    plt.legend(fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.ylim([0, 1.1])
+    plt.tight_layout()
+    plt.savefig('informed_ratio_vs_n.png', dpi=300)
+    print("Plot saved as 'informed_ratio_vs_n.png'")
+    plt.show()
+
+
+# ============================================================================
+# Main Execution
+# ============================================================================
+
+if __name__ == "__main__":
+    # Example simulation parameters
+    n_values = [20, 50, 100, 200, 500]
+    m = 8  # number of alternatives
+    alpha = 3.0  # cost ratio (max/min)
+    budget = 15.0
+    quality_range = (0, 1)  # binary qualities
+    utility_type = 'normal'  # or 'cost_proportional'
+    
+    print("=" * 60)
+    print("Informed Participatory Budgeting Simulation")
+    print("=" * 60)
+    print(f"Parameters:")
+    print(f"  n values: {n_values}")
+    print(f"  m (alternatives): {m}")
+    print(f"  alpha (cost ratio): {alpha}")
+    print(f"  budget: {budget}")
+    print(f"  quality range: {quality_range}")
+    print(f"  utility type: {utility_type}")
+    print("=" * 60)
+    
+    # Run simulation
+    results = run_simulation(n_values, m, alpha, budget, quality_range, 
+                           utility_type, num_samples=30, num_trials=5)
+    
+    # Plot results
+    plot_results(n_values, results, 
+                title=f"Informed Ratio vs n (m={m}, α={alpha}, B={budget})")
+    
+    print("\nSimulation complete!")
+
