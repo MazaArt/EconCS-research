@@ -145,7 +145,7 @@ def plot_utility_comparison(n_values: List[int], results: dict, rule_names: List
 
 if __name__ == "__main__":
     # Simulation parameters
-    n_values = [50, 100, 200, 500, 1000]
+    n_values = [50, 100, 200]
     m = 8  # number of alternatives
     alpha = 3.0  # cost ratio (max/min)
     budget = 15.0

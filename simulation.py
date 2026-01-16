@@ -373,7 +373,7 @@ def generate_instance(n: int, m: int, alpha: float, budget: float,
     qualities = np.random.randint(min_qual, max_qual + 1, m)
     
     # Generate common priors (probability that quality = max_qual)
-    qual_priors = np.random.uniform(0.3, 0.9, m)
+    qual_priors = np.random.uniform(0.1, 0.9, m)
     
     # Generate signal distributions
     # For each alternative j and quality q, prob of positive signal
@@ -571,7 +571,7 @@ def plot_results(n_values: List[int], results: dict, title: str = "Informed Rati
 
 if __name__ == "__main__":
     # Example simulation parameters
-    n_values = [20, 50, 100, 200, 500]
+    n_values = [20, 50, 100, 200]
     m = 8  # number of alternatives
     alpha = 3.0  # cost ratio (max/min)
     budget = 15.0

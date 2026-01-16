@@ -181,7 +181,7 @@ def plot_convergence(n_values: List[int], results: dict, rule_names: List[str],
 
 if __name__ == "__main__":
     # Simulation parameters
-    n_values = [20, 50, 100, 200, 500, 1000, 2000]  # Extended range for convergence
+    n_values = [20, 50, 100, 200]  # Extended range for convergence
     m = 8  # number of alternatives
     alpha = 1.0  # Unit cost for convergence analysis
     budget = 15.0

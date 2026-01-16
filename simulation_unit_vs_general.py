@@ -141,7 +141,7 @@ def plot_unit_vs_general(n_values: List[int], results: dict, rule_names: List[st
 
 if __name__ == "__main__":
     # Simulation parameters
-    n_values = [50, 100, 200, 500, 1000]
+    n_values = [50, 100, 200]
     m = 8  # number of alternatives
     alpha_values = [1.0, 2.0, 3.0, 5.0]  # 1.0 = unit cost, >1.0 = general cost
     budget = 15.0
