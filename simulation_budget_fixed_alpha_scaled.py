@@ -18,17 +18,21 @@ from simulation import (
 )
 
 
-def run_alpha_scaled_analysis(n: int, m: int, budget: float,
+def run_alpha_scaled_analysis(n: int, m: int, base_budget: float,
                               alpha_values: List[float], quality_range: Tuple[int, int],
                               utility_type: str = 'normal',
                               num_samples: int = 50, num_trials: int = 10) -> dict:
     """
-    Run simulation with fixed budget and scaled alpha values.
+    Run simulation with budget proportional to expected total cost and scaled alpha values.
+    
+    The budget is scaled proportionally to the expected cost per alternative.
+    Expected cost per alternative = (1 + alpha) / 2, so budget scales as (1 + alpha) / 2.
+    This keeps the budget constraint at a consistent level relative to total costs.
     
     Args:
         n: number of agents (fixed)
         m: number of alternatives
-        budget: budget constraint (fixed)
+        base_budget: base budget constraint (for alpha=1.0, budget = base_budget)
         alpha_values: list of alpha (cost ratio) values to test
         quality_range: (min_quality, max_quality)
         utility_type: 'normal' or 'cost_proportional'
@@ -54,12 +58,17 @@ def run_alpha_scaled_analysis(n: int, m: int, budget: float,
     results = {rule: [] for rule in voting_rules.keys()}
     
     for alpha in alpha_values:
-        print(f"Running simulation for alpha={alpha}...", end=' ', flush=True)
+        # Scale budget proportionally to expected cost
+        # Expected cost per alternative = (1 + alpha) / 2
+        # Scale budget by this ratio to keep constraint level consistent
+        scaled_budget = base_budget * (1 + alpha) / 2.0
+        
+        print(f"Running simulation for alpha={alpha} (budget={scaled_budget:.2f})...", end=' ', flush=True)
         rule_ratios = {rule: [] for rule in voting_rules.keys()}
         
         for trial in range(num_trials):
-            # Generate instance
-            instance = generate_instance(n, m, alpha, budget, quality_range, seed=trial)
+            # Generate instance with scaled budget
+            instance = generate_instance(n, m, alpha, scaled_budget, quality_range, seed=trial)
             
             # Calculate informed ratio for each rule
             for rule_name, rule_func in voting_rules.items():
@@ -81,7 +90,7 @@ def run_alpha_scaled_analysis(n: int, m: int, budget: float,
 
 
 def plot_alpha_scaled(alpha_values: List[float], results: dict, rule_names: List[str],
-                     n: int, m: int, budget: float, utility_type: str,
+                     n: int, m: int, base_budget: float, utility_type: str,
                      filename: str = None):
     """Plot informed ratios vs alpha values."""
     import os
@@ -94,7 +103,8 @@ def plot_alpha_scaled(alpha_values: List[float], results: dict, rule_names: List
     
     plt.xlabel('Cost Ratio (α)', fontsize=12)
     plt.ylabel('Informed Ratio', fontsize=12)
-    plt.title(f'Informed Ratio vs Cost Ratio (n={n}, m={m}, B={budget}, utility={utility_type})',
+    plt.title(f'Informed Ratio vs Cost Ratio\n'
+              f'(n={n}, m={m}, base_B={base_budget}, budget∝(1+α)/2, utility={utility_type})',
               fontsize=14, fontweight='bold')
     plt.legend(fontsize=10)
     plt.grid(True, alpha=0.3)
@@ -102,7 +112,7 @@ def plot_alpha_scaled(alpha_values: List[float], results: dict, rule_names: List
     plt.tight_layout()
     
     if filename is None:
-        filename = f'alpha_scaled_n{n}_m{m}_B{budget}_{utility_type}.png'
+        filename = f'alpha_scaled_n{n}_m{m}_baseB{base_budget}_{utility_type}.png'
     # Save to plots/simulation_budget_fixed_alpha_scaled folder
     os.makedirs('plots/simulation_budget_fixed_alpha_scaled', exist_ok=True)
     filepath = os.path.join('plots/simulation_budget_fixed_alpha_scaled', filename)
@@ -119,18 +129,20 @@ if __name__ == "__main__":
     # Simulation parameters
     n = 100  # Fixed number of agents
     m = 8  # number of alternatives
-    budget = 15.0  # Fixed budget
+    base_budget = 6.0  # Base budget (for alpha=1.0, budget = base_budget)
+    # Budget scales as: budget(alpha) = base_budget * (1 + alpha) / 2
+    # This keeps budget at ~60% of expected total cost (expected = m * (1+alpha)/2 = 4*(1+alpha))
     alpha_values = [1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0]  # Scaled alpha values
     quality_range = (0, 1)  # binary qualities
     utility_type = 'normal'  # or 'cost_proportional'
     
     print("=" * 60)
-    print("Fixed Budget with Scaled Alpha Simulation")
+    print("Scaled Budget with Scaled Alpha Simulation")
     print("=" * 60)
     print(f"Parameters:")
     print(f"  n (agents): {n} (fixed)")
     print(f"  m (alternatives): {m}")
-    print(f"  budget: {budget} (fixed)")
+    print(f"  base budget: {base_budget} (budget scales as base_B * (1+α)/2)")
     print(f"  alpha values: {alpha_values}")
     print(f"  quality range: {quality_range}")
     print(f"  utility type: {utility_type}")
@@ -138,12 +150,12 @@ if __name__ == "__main__":
     
     # Run simulation for original alpha values
     results, rule_names = run_alpha_scaled_analysis(
-        n, m, budget, alpha_values, quality_range,
+        n, m, base_budget, alpha_values, quality_range,
         utility_type, num_samples=30, num_trials=5
     )
     
     # Plot results
-    plot_alpha_scaled(alpha_values, results, rule_names, n, m, budget, utility_type)
+    plot_alpha_scaled(alpha_values, results, rule_names, n, m, base_budget, utility_type)
     
     # Run finer-grained simulation with more alpha values
     print("\n" + "=" * 60)
@@ -151,12 +163,12 @@ if __name__ == "__main__":
     print("=" * 60)
     alpha_values_fine = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.5, 4.0, 4.5, 5.0]
     results_fine, rule_names_fine = run_alpha_scaled_analysis(
-        n, m, budget, alpha_values_fine, quality_range,
+        n, m, base_budget, alpha_values_fine, quality_range,
         utility_type, num_samples=30, num_trials=5
     )
     
     # Plot finer-grained results
-    filename_fine = f'alpha_scaled_n{n}_m{m}_B{budget}_{utility_type}_fine.png'
-    plot_alpha_scaled(alpha_values_fine, results_fine, rule_names_fine, n, m, budget, utility_type, filename=filename_fine)
+    filename_fine = f'alpha_scaled_n{n}_m{m}_baseB{base_budget}_{utility_type}_fine.png'
+    plot_alpha_scaled(alpha_values_fine, results_fine, rule_names_fine, n, m, base_budget, utility_type, filename=filename_fine)
     
     print("\nSimulation complete!")
