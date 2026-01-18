@@ -12,7 +12,7 @@ from typing import List, Tuple
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, greedy_cover, method_of_equal_shares, phragmen,
+    approval_voting, greedy_cover, method_of_equal_shares, mes_plus_av, phragmen,
     proportional_approval_voting,
     calculate_informed_ratio, generate_instance
 )
@@ -42,6 +42,7 @@ def run_utility_comparison(n_values: List[int], m: int, alpha: float,
         'AV': approval_voting,
         'GC': greedy_cover,
         'MES': method_of_equal_shares,
+        'MES+AV': mes_plus_av,
         'Phragmen': phragmen
     }
     
@@ -50,7 +51,7 @@ def run_utility_comparison(n_values: List[int], m: int, alpha: float,
         voting_rules['PAV'] = proportional_approval_voting
     
     results = {
-        util_type: {rule: [] for rule in voting_rules.keys()}
+        util_type: {rule: {'mean': [], 'std': []} for rule in voting_rules.keys()}
         for util_type in utility_types
     }
     
@@ -77,10 +78,11 @@ def run_utility_comparison(n_values: List[int], m: int, alpha: float,
                         print(f"\n    Error in {rule_name}: {e}")
                         rule_ratios[rule_name].append(0.0)
             
-            # Average over trials
+            # Calculate mean and std over trials
             for rule_name in voting_rules.keys():
-                avg_ratio = np.mean(rule_ratios[rule_name])
-                results[utility_type][rule_name].append(avg_ratio)
+                ratios = rule_ratios[rule_name]
+                results[utility_type][rule_name]['mean'].append(np.mean(ratios))
+                results[utility_type][rule_name]['std'].append(np.std(ratios))
             print("done")
     
     return results, voting_rules.keys()
@@ -106,19 +108,33 @@ def plot_utility_comparison(n_values: List[int], results: dict, rule_names: List
         
         # Plot for each utility type
         for utility_type in ['normal', 'cost_proportional']:
-            ratios = results[utility_type][rule_name]
+            means = results[utility_type][rule_name]['mean']
+            stds = results[utility_type][rule_name]['std']
             label = 'Normal' if utility_type == 'normal' else 'Cost-Proportional'
             marker = 'o' if utility_type == 'normal' else 's'
             linestyle = '-' if utility_type == 'normal' else '--'
-            ax.plot(n_values, ratios, marker=marker, linestyle=linestyle,
-                   label=label, linewidth=2, markersize=7)
+            color = '#1f77b4' if utility_type == 'normal' else '#ff7f0e'
+            ax.errorbar(n_values, means, yerr=stds,
+                       marker=marker, linestyle=linestyle, color=color,
+                       label=label, linewidth=3, markersize=8,
+                       capsize=5, capthick=2, elinewidth=2)
         
-        ax.set_xlabel('Number of Agents (n)', fontsize=11)
-        ax.set_ylabel('Informed Ratio', fontsize=11)
-        ax.set_title(f'{rule_name}', fontsize=12, fontweight='bold')
-        ax.legend(fontsize=9)
+        # Add horizontal line at y=1 (perfect performance)
+        ax.axhline(y=1.0, color='r', linestyle='--', alpha=0.5, linewidth=2, label='Perfect (Performance=1)')
+        
+        ax.set_xlabel('Number of Agents (n)', fontsize=22)
+        ax.set_ylabel('Performance', fontsize=22)
+        ax.set_title(f'{rule_name}', fontsize=24, fontweight='bold')
+        ax.legend(fontsize=18)
         ax.grid(True, alpha=0.3)
-        ax.set_ylim([0, 1.1])
+        
+        # Adjust y-axis to use most of the visual space
+        all_means = [m for ut in ['normal', 'cost_proportional'] for m in results[ut][rule_name]['mean']]
+        all_stds = [s for ut in ['normal', 'cost_proportional'] for s in results[ut][rule_name]['std']]
+        y_min = max(0, min(all_means) - 2 * max(all_stds) if all_stds else 0)
+        y_max = min(1.05, max(all_means) + 2 * max(all_stds) if all_stds else 1.05)
+        ax.set_ylim([y_min, y_max])
+        ax.tick_params(labelsize=18)
     
     # Hide unused subplots
     for idx in range(n_rules, len(axes)):
@@ -126,11 +142,13 @@ def plot_utility_comparison(n_values: List[int], results: dict, rule_names: List
     
     plt.suptitle(f'Normal Utility vs Cost-Proportional Utility Comparison\n'
                  f'(m={m}, α={alpha}, B={budget})',
-                 fontsize=14, fontweight='bold', y=0.995)
+                 fontsize=28, fontweight='bold', y=0.995)
     plt.tight_layout(rect=[0, 0, 1, 0.98])
     
     if filename is None:
-        filename = f'utility_comparison_m{m}_alpha{alpha}_B{budget}.png'
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'utility_comparison_m{m}_alpha{alpha}_B{budget}_{timestamp}.png'
     # Save to plots/simulation_utility_comparison folder
     os.makedirs('plots/simulation_utility_comparison', exist_ok=True)
     filepath = os.path.join('plots/simulation_utility_comparison', filename)
@@ -145,10 +163,10 @@ def plot_utility_comparison(n_values: List[int], results: dict, rule_names: List
 
 if __name__ == "__main__":
     # Simulation parameters
-    n_values = [50, 100, 200]
+    n_values = list(range(10, 201, 10))  # n=10 to n=200 in steps of 10
     m = 8  # number of alternatives
-    alpha = 3.0  # cost ratio (max/min)
-    budget = 15.0
+    alpha = 5.0  # cost ratio (max/min) - non-unit cost simulation
+    budget = 8.0
     quality_range = (0, 1)  # binary qualities
     
     print("=" * 60)
@@ -170,20 +188,6 @@ if __name__ == "__main__":
     
     # Plot results
     plot_utility_comparison(n_values, results, rule_names, m, alpha, budget)
-    
-    # Run finer-grained simulation for small n values
-    print("\n" + "=" * 60)
-    print("Running finer-grained utility comparison (n = 5, 10, 20, 50, 100, 250)")
-    print("=" * 60)
-    n_values_fine = [5, 10, 20, 50, 100, 250]
-    results_fine, rule_names_fine = run_utility_comparison(
-        n_values_fine, m, alpha, budget, quality_range,
-        num_samples=30, num_trials=5
-    )
-    
-    # Plot finer-grained results
-    filename_fine = f'utility_comparison_m{m}_alpha{alpha}_B{budget}_fine.png'
-    plot_utility_comparison(n_values_fine, results_fine, rule_names_fine, m, alpha, budget, filename=filename_fine)
     
     print("\nSimulation complete!")
 

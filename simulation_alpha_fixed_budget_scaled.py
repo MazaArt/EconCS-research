@@ -1,7 +1,7 @@
 """
 Fixed Alpha (Cost Ratio) with Scaled Budget Simulation
 
-This script analyzes how informed ratios change as budget scales,
+This script analyzes how performance changes as budget scales,
 with a fixed cost ratio (alpha).
 """
 
@@ -12,7 +12,7 @@ from typing import List, Tuple
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, greedy_cover, method_of_equal_shares, phragmen,
+    approval_voting, greedy_cover, method_of_equal_shares, mes_plus_av, phragmen,
     proportional_approval_voting,
     calculate_informed_ratio, generate_instance
 )
@@ -36,7 +36,7 @@ def run_budget_scaled_analysis(n: int, m: int, alpha: float,
         num_trials: number of independent trials
     
     Returns:
-        Dictionary with results: {rule: [ratios]}
+        Dictionary with results: {rule: {'mean': [...], 'std': [...]}}
     """
     use_cost_proportional = (utility_type == 'cost_proportional')
     
@@ -44,6 +44,7 @@ def run_budget_scaled_analysis(n: int, m: int, alpha: float,
         'AV': approval_voting,
         'GC': greedy_cover,
         'MES': method_of_equal_shares,
+        'MES+AV': mes_plus_av,
         'Phragmen': phragmen
     }
     
@@ -51,7 +52,10 @@ def run_budget_scaled_analysis(n: int, m: int, alpha: float,
     if m <= 12:
         voting_rules['PAV'] = proportional_approval_voting
     
-    results = {rule: [] for rule in voting_rules.keys()}
+    results = {
+        rule: {'mean': [], 'std': []}
+        for rule in voting_rules.keys()
+    }
     
     for budget in budget_values:
         print(f"Running simulation for budget={budget}...", end=' ', flush=True)
@@ -70,11 +74,12 @@ def run_budget_scaled_analysis(n: int, m: int, alpha: float,
                     print(f"\n    Error in {rule_name}: {e}")
                     rule_ratios[rule_name].append(0.0)
         
-        # Average over trials
+        # Calculate mean and std over trials
         for rule_name in voting_rules.keys():
-            avg_ratio = np.mean(rule_ratios[rule_name])
-            results[rule_name].append(avg_ratio)
-            print(f"{rule_name}: {avg_ratio:.4f}  ", end='', flush=True)
+            ratios = rule_ratios[rule_name]
+            results[rule_name]['mean'].append(np.mean(ratios))
+            results[rule_name]['std'].append(np.std(ratios))
+            print(f"{rule_name}: {np.mean(ratios):.4f}±{np.std(ratios):.4f}  ", end='', flush=True)
         print("done")
     
     return results, voting_rules.keys()
@@ -83,26 +88,56 @@ def run_budget_scaled_analysis(n: int, m: int, alpha: float,
 def plot_budget_scaled(budget_values: List[float], results: dict, rule_names: List[str],
                        n: int, m: int, alpha: float, utility_type: str,
                        filename: str = None):
-    """Plot informed ratios vs budget values."""
+    """Plot performance with error bars vs budget values."""
     import os
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 8))
     
-    # Plot for each rule
+    # Define colors, markers, and linestyles for each rule
+    rule_styles = {
+        'AV': {'color': '#1f77b4', 'marker': 'o', 'linestyle': '-', 'markersize': 8},
+        'GC': {'color': '#ff7f0e', 'marker': 's', 'linestyle': '--', 'markersize': 8},
+        'MES': {'color': '#2ca02c', 'marker': '^', 'linestyle': '-.', 'markersize': 8},
+        'MES+AV': {'color': '#d62728', 'marker': 'v', 'linestyle': ':', 'markersize': 8},
+        'Phragmen': {'color': '#9467bd', 'marker': 'D', 'linestyle': '-', 'markersize': 8},
+        'PAV': {'color': '#8c564b', 'marker': 'p', 'linestyle': '--', 'markersize': 8}
+    }
+    
     for rule_name in rule_names:
-        ratios = results[rule_name]
-        plt.plot(budget_values, ratios, marker='o', label=rule_name, linewidth=2, markersize=7)
+        means = results[rule_name]['mean']
+        stds = results[rule_name]['std']
+        style = rule_styles.get(rule_name, {'color': 'black', 'marker': 'o', 'linestyle': '-', 'markersize': 8})
+        
+        plt.errorbar(budget_values, means, yerr=stds,
+                    marker=style['marker'], linestyle=style['linestyle'],
+                    color=style['color'], label=rule_name,
+                    linewidth=3, markersize=style['markersize'],
+                    capsize=5, capthick=2, elinewidth=2)
     
-    plt.xlabel('Budget (B)', fontsize=12)
-    plt.ylabel('Informed Ratio', fontsize=12)
-    plt.title(f'Informed Ratio vs Budget (n={n}, m={m}, α={alpha}, utility={utility_type})',
-              fontsize=14, fontweight='bold')
-    plt.legend(fontsize=10)
+    # Add horizontal line at y=1 (perfect performance)
+    plt.axhline(y=1.0, color='r', linestyle='--', alpha=0.5, linewidth=2, label='Perfect (Performance=1)')
+    
+    plt.xlabel('Budget (B)', fontsize=24)
+    plt.ylabel('Performance', fontsize=24)
+    plt.title(f'Performance vs Budget (n={n}, m={m}, α={alpha}, utility={utility_type})',
+              fontsize=28, fontweight='bold')
+    plt.legend(fontsize=20, loc='best')
     plt.grid(True, alpha=0.3)
-    plt.ylim([0, 1.1])
+    
+    # Adjust y-axis to use most of the visual space
+    all_means = [m for r in results.values() for m in r['mean']]
+    all_stds = [s for r in results.values() for s in r['std']]
+    y_min = max(0, min(all_means) - 2 * max(all_stds) if all_stds else 0)
+    y_max = min(1.05, max(all_means) + 2 * max(all_stds) if all_stds else 1.05)
+    plt.ylim([y_min, y_max])
+    
+    plt.xticks(fontsize=20)
+    plt.yticks(fontsize=20)
     plt.tight_layout()
     
     if filename is None:
-        filename = f'budget_scaled_n{n}_m{m}_alpha{alpha}_{utility_type}.png'
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'budget_scaled_n{n}_m{m}_alpha{alpha}_{utility_type}_{timestamp}.png'
     # Save to plots/simulation_alpha_fixed_budget_scaled folder
     os.makedirs('plots/simulation_alpha_fixed_budget_scaled', exist_ok=True)
     filepath = os.path.join('plots/simulation_alpha_fixed_budget_scaled', filename)
@@ -117,10 +152,10 @@ def plot_budget_scaled(budget_values: List[float], results: dict, rule_names: Li
 
 if __name__ == "__main__":
     # Simulation parameters
-    n = 100  # Fixed number of agents
+    n = 200  # Fixed number of agents (upwards of 200)
     m = 8  # number of alternatives
-    alpha = 3.0  # Fixed cost ratio
-    budget_values = [5.0, 10.0, 15.0, 20.0, 25.0, 30.0]  # Scaled budget values
+    alpha = 5.0  # Fixed cost ratio - non-unit cost simulation
+    budget_values = [5.0, 10.0, 15.0, 20.0, 25.0, 30.0]  # Budget values
     quality_range = (0, 1)  # binary qualities
     utility_type = 'normal'  # or 'cost_proportional'
     
@@ -136,7 +171,7 @@ if __name__ == "__main__":
     print(f"  utility type: {utility_type}")
     print("=" * 60)
     
-    # Run simulation for original budget values
+    # Run simulation
     results, rule_names = run_budget_scaled_analysis(
         n, m, alpha, budget_values, quality_range,
         utility_type, num_samples=30, num_trials=5
@@ -144,19 +179,5 @@ if __name__ == "__main__":
     
     # Plot results
     plot_budget_scaled(budget_values, results, rule_names, n, m, alpha, utility_type)
-    
-    # Run finer-grained simulation with more budget values
-    print("\n" + "=" * 60)
-    print("Running finer-grained budget analysis")
-    print("=" * 60)
-    budget_values_fine = [3.0, 5.0, 7.5, 10.0, 12.5, 15.0, 17.5, 20.0, 22.5, 25.0, 27.5, 30.0]
-    results_fine, rule_names_fine = run_budget_scaled_analysis(
-        n, m, alpha, budget_values_fine, quality_range,
-        utility_type, num_samples=30, num_trials=5
-    )
-    
-    # Plot finer-grained results
-    filename_fine = f'budget_scaled_n{n}_m{m}_alpha{alpha}_{utility_type}_fine.png'
-    plot_budget_scaled(budget_values_fine, results_fine, rule_names_fine, n, m, alpha, utility_type, filename=filename_fine)
     
     print("\nSimulation complete!")

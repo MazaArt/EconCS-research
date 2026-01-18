@@ -2,7 +2,7 @@
 Simulation for Informed Participatory Budgeting
 
 This module implements voting rules (AV, PAV, Greedy Cover, MES, Phragmen),
-simulates PB instances, and calculates informed ratios.
+simulates PB instances, and calculates performance (ratio to optimal knapsack).
 """
 
 import numpy as np
@@ -202,6 +202,53 @@ def method_of_equal_shares(votes: np.ndarray, costs: np.ndarray, budget: float) 
         funded.add(best_j)
     
     return winning_set
+
+
+def mes_plus_av(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    Hybrid MES + AV: First run MES, then use AV to exhaust remaining budget.
+    
+    Args:
+        votes: (n, m) binary array, votes[i, j] = 1 if agent i approves alternative j
+        costs: (m,) array of costs
+        budget: budget constraint
+    
+    Returns:
+        Set of winning alternative indices
+    """
+    # First, run MES
+    mes_winning_set = method_of_equal_shares(votes, costs, budget)
+    
+    # Calculate remaining budget
+    used_budget = sum(costs[j] for j in mes_winning_set)
+    remaining_budget = budget - used_budget
+    
+    # If no remaining budget, return MES result
+    if remaining_budget <= 1e-6:  # Small threshold for floating point
+        return mes_winning_set
+    
+    # Use AV to fill remaining budget
+    m = len(costs)
+    approval_counts = votes.sum(axis=0)
+    
+    # Get alternatives not yet selected
+    remaining_alternatives = [j for j in range(m) if j not in mes_winning_set]
+    
+    if not remaining_alternatives:
+        return mes_winning_set
+    
+    # Sort by approval count (descending), break ties by index
+    remaining_alternatives.sort(key=lambda j: (approval_counts[j], -j), reverse=True)
+    
+    # Add alternatives until budget is exhausted
+    for j in remaining_alternatives:
+        if costs[j] <= remaining_budget:
+            mes_winning_set.add(j)
+            remaining_budget -= costs[j]
+        else:
+            break  # Can't afford any more alternatives
+    
+    return mes_winning_set
 
 
 def phragmen(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
@@ -409,16 +456,16 @@ def generate_instance(n: int, m: int, alpha: float, budget: float,
 
 
 # ============================================================================
-# Informed Ratio Calculation
+# Performance Calculation (Ratio to Optimal Knapsack)
 # ============================================================================
 
 def calculate_informed_ratio(instance: dict, voting_rule: Callable, 
                             use_cost_proportional: bool = False, 
                             num_samples: int = 100) -> float:
     """
-    Calculate informed ratio for a voting rule.
+    Calculate performance (ratio to optimal knapsack) for a voting rule.
     
-    The informed ratio is:
+    Performance is defined as:
     E[utility(voting_rule_output)] / E[max_utility(optimal_set)]
     
     We approximate this by averaging over multiple random signal realizations.
@@ -430,7 +477,7 @@ def calculate_informed_ratio(instance: dict, voting_rule: Callable,
         num_samples: number of samples for Monte Carlo
     
     Returns:
-        Informed ratio
+        Performance (ratio to optimal knapsack)
     """
     n = instance['n']
     m = instance['m']
@@ -505,6 +552,7 @@ def run_simulation(n_values: List[int], m: int, alpha: float, budget: float,
         'AV': approval_voting,
         'GC': greedy_cover,
         'MES': method_of_equal_shares,
+        'MES+AV': mes_plus_av,
         'Phragmen': phragmen
     }
     
@@ -512,7 +560,10 @@ def run_simulation(n_values: List[int], m: int, alpha: float, budget: float,
     if m <= 12:
         voting_rules['PAV'] = proportional_approval_voting
     
-    results = {rule: [] for rule in voting_rules.keys()}
+    results = {
+        rule: {'mean': [], 'std': []}
+        for rule in voting_rules.keys()
+    }
     
     for n in n_values:
         print(f"Running simulation for n={n}...")
@@ -522,7 +573,7 @@ def run_simulation(n_values: List[int], m: int, alpha: float, budget: float,
             # Generate instance
             instance = generate_instance(n, m, alpha, budget, quality_range, seed=trial)
             
-            # Calculate informed ratio for each rule
+            # Calculate performance (ratio to optimal) for each rule
             for rule_name, rule_func in voting_rules.items():
                 try:
                     ratio = calculate_informed_ratio(instance, rule_func, use_cost_proportional, num_samples)
@@ -531,32 +582,78 @@ def run_simulation(n_values: List[int], m: int, alpha: float, budget: float,
                     print(f"  Error in {rule_name}: {e}")
                     rule_ratios[rule_name].append(0.0)
         
-        # Average over trials
+        # Calculate mean and std over trials
         for rule_name in voting_rules.keys():
-            avg_ratio = np.mean(rule_ratios[rule_name])
-            results[rule_name].append(avg_ratio)
-            print(f"  {rule_name}: {avg_ratio:.4f}")
+            ratios = rule_ratios[rule_name]
+            results[rule_name]['mean'].append(np.mean(ratios))
+            results[rule_name]['std'].append(np.std(ratios))
+            print(f"  {rule_name}: {np.mean(ratios):.4f} ± {np.std(ratios):.4f}")
     
     return results
 
 
-def plot_results(n_values: List[int], results: dict, title: str = "Informed Ratio vs Number of Agents", filename: str = None):
-    """Plot informed ratios for different voting rules."""
+def plot_results(n_values: List[int], results: dict, title: str = "Performance vs Number of Agents", filename: str = None):
+    """Plot performance with error bars for different voting rules."""
     import os
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 8))
     
-    for rule_name, ratios in results.items():
-        plt.plot(n_values, ratios, marker='o', label=rule_name, linewidth=2)
+    # Define colors, markers, and linestyles for each rule
+    rule_styles = {
+        'AV': {'color': '#1f77b4', 'marker': 'o', 'linestyle': '-', 'markersize': 8},
+        'GC': {'color': '#ff7f0e', 'marker': 's', 'linestyle': '--', 'markersize': 8},
+        'MES': {'color': '#2ca02c', 'marker': '^', 'linestyle': '-.', 'markersize': 8},
+        'MES+AV': {'color': '#d62728', 'marker': 'v', 'linestyle': ':', 'markersize': 8},
+        'Phragmen': {'color': '#9467bd', 'marker': 'D', 'linestyle': '-', 'markersize': 8},
+        'PAV': {'color': '#8c564b', 'marker': 'p', 'linestyle': '--', 'markersize': 8}
+    }
     
-    plt.xlabel('Number of Agents (n)', fontsize=12)
-    plt.ylabel('Informed Ratio', fontsize=12)
-    plt.title(title, fontsize=14)
-    plt.legend(fontsize=10)
+    for rule_name in results.keys():
+        means = results[rule_name]['mean']
+        stds = results[rule_name]['std']
+        style = rule_styles.get(rule_name, {'color': 'black', 'marker': 'o', 'linestyle': '-', 'markersize': 8})
+        
+        plt.errorbar(n_values, means, yerr=stds, 
+                    marker=style['marker'], linestyle=style['linestyle'],
+                    color=style['color'], label=rule_name, 
+                    linewidth=3, markersize=style['markersize'],
+                    capsize=5, capthick=2, elinewidth=2)
+    
+    # Add horizontal line at y=1 (perfect performance)
+    plt.axhline(y=1.0, color='r', linestyle='--', alpha=0.5, linewidth=2, label='Perfect (Performance=1)')
+    
+    plt.xlabel('Number of Agents (n)', fontsize=24)
+    plt.ylabel('Performance', fontsize=24)
+    plt.title(title, fontsize=28, fontweight='bold')
+    plt.legend(fontsize=20, loc='best')
     plt.grid(True, alpha=0.3)
-    plt.ylim([0, 1.1])
+    
+    # Adjust y-axis to use most of the visual space
+    all_means = [m for r in results.values() for m in r['mean']]
+    all_stds = [s for r in results.values() for s in r['std']]
+    if all_means:
+        if all_stds:
+            y_min = max(0.0, min(all_means) - 2 * max(all_stds))
+            y_max = min(1.05, max(all_means) + 2 * max(all_stds))
+        else:
+            y_min = max(0.0, min(all_means) - 0.05)
+            y_max = min(1.05, max(all_means) + 0.05)
+        # Ensure y_min is never negative
+        y_min = max(0.0, y_min)
+    else:
+        y_min = 0.0
+        y_max = 1.05
+    # Ensure y_min < y_max to prevent axis inversion
+    if y_min >= y_max:
+        y_min = max(0.0, y_max - 0.1)
+    plt.ylim([y_min, y_max])
+    
+    plt.xticks(fontsize=20)
+    plt.yticks(fontsize=20)
     plt.tight_layout()
     if filename is None:
-        filename = 'informed_ratio_vs_n.png'
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'performance_vs_n_{timestamp}.png'
     # Save to plots/simulation folder
     os.makedirs('plots/simulation', exist_ok=True)
     filepath = os.path.join('plots/simulation', filename)
@@ -570,16 +667,16 @@ def plot_results(n_values: List[int], results: dict, title: str = "Informed Rati
 # ============================================================================
 
 if __name__ == "__main__":
-    # Example simulation parameters
-    n_values = [20, 50, 100, 200]
+    # Simulation parameters
+    n_values = list(range(10, 201, 10))  # n=10 to n=200 in steps of 10
     m = 8  # number of alternatives
-    alpha = 3.0  # cost ratio (max/min)
-    budget = 15.0
+    alpha = 5.0  # cost ratio (max/min) - non-unit cost simulation
+    budget = 8.0  # budget constraint
     quality_range = (0, 1)  # binary qualities
     utility_type = 'normal'  # or 'cost_proportional'
     
     print("=" * 60)
-    print("Informed Participatory Budgeting Simulation")
+    print("Participatory Budgeting Simulation")
     print("=" * 60)
     print(f"Parameters:")
     print(f"  n values: {n_values}")
@@ -590,26 +687,13 @@ if __name__ == "__main__":
     print(f"  utility type: {utility_type}")
     print("=" * 60)
     
-    # Run simulation for original n values
+    # Run simulation for default parameters
     results = run_simulation(n_values, m, alpha, budget, quality_range, 
                            utility_type, num_samples=30, num_trials=5)
     
     # Plot results
     plot_results(n_values, results, 
-                title=f"Informed Ratio vs n (m={m}, α={alpha}, B={budget})")
-    
-    # Run finer-grained simulation for small n values
-    print("\n" + "=" * 60)
-    print("Running finer-grained simulation (n = 5, 10, 20, 50, 100, 250)")
-    print("=" * 60)
-    n_values_fine = [5, 10, 20, 50, 100, 250]
-    results_fine = run_simulation(n_values_fine, m, alpha, budget, quality_range, 
-                                 utility_type, num_samples=30, num_trials=5)
-    
-    # Plot finer-grained results
-    plot_results(n_values_fine, results_fine, 
-                title=f"Informed Ratio vs n (Fine-grained, m={m}, α={alpha}, B={budget})",
-                filename='informed_ratio_vs_n_fine.png')
+                title=f"Performance vs n (m={m}, α={alpha}, B={budget})")
     
     print("\nSimulation complete!")
 

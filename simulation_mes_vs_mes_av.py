@@ -91,7 +91,10 @@ def run_mes_vs_mes_av_comparison(n_values: List[int], m: int, alpha: float,
         'MES + AV': mes_plus_av
     }
     
-    results = {rule: [] for rule in voting_rules.keys()}
+    results = {
+        rule: {'mean': [], 'std': []}
+        for rule in voting_rules.keys()
+    }
     
     for n in n_values:
         print(f"Running simulation for n={n}...", end=' ', flush=True)
@@ -110,11 +113,12 @@ def run_mes_vs_mes_av_comparison(n_values: List[int], m: int, alpha: float,
                     print(f"\n    Error in {rule_name}: {e}")
                     rule_ratios[rule_name].append(0.0)
         
-        # Average over trials
+        # Calculate mean and std over trials
         for rule_name in voting_rules.keys():
-            avg_ratio = np.mean(rule_ratios[rule_name])
-            results[rule_name].append(avg_ratio)
-            print(f"{rule_name}: {avg_ratio:.4f}  ", end='', flush=True)
+            ratios = rule_ratios[rule_name]
+            results[rule_name]['mean'].append(np.mean(ratios))
+            results[rule_name]['std'].append(np.std(ratios))
+            print(f"{rule_name}: {np.mean(ratios):.4f}±{np.std(ratios):.4f}  ", end='', flush=True)
         print("done")
     
     return results, voting_rules.keys()
@@ -123,30 +127,53 @@ def run_mes_vs_mes_av_comparison(n_values: List[int], m: int, alpha: float,
 def plot_mes_vs_mes_av(n_values: List[int], results: dict, rule_names: List[str],
                       m: int, alpha: float, budget: float, utility_type: str,
                       filename: str = None):
-    """Plot comparison between MES and MES + AV."""
+    """Plot comparison between MES and MES + AV with error bars."""
     import os
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 8))
+    
+    # Define styles for each rule
+    rule_styles = {
+        'MES': {'marker': 'o', 'linestyle': '-', 'color': '#2ca02c'},
+        'MES + AV': {'marker': 's', 'linestyle': '--', 'color': '#d62728'},
+        'MES+AV': {'marker': 's', 'linestyle': '--', 'color': '#d62728'}
+    }
     
     # Plot for each rule
     for rule_name in rule_names:
-        ratios = results[rule_name]
-        marker = 'o' if rule_name == 'MES' else 's'
-        linestyle = '-' if rule_name == 'MES' else '--'
-        plt.plot(n_values, ratios, marker=marker, linestyle=linestyle,
-               label=rule_name, linewidth=2, markersize=8)
+        means = results[rule_name]['mean']
+        stds = results[rule_name]['std']
+        style = rule_styles.get(rule_name, {'marker': 'o', 'linestyle': '-', 'color': 'black'})
+        plt.errorbar(n_values, means, yerr=stds,
+                    marker=style['marker'], linestyle=style['linestyle'],
+                    color=style['color'], label=rule_name,
+                    linewidth=3, markersize=8,
+                    capsize=5, capthick=2, elinewidth=2)
     
-    plt.xlabel('Number of Agents (n)', fontsize=12)
-    plt.ylabel('Informed Ratio', fontsize=12)
+    # Add horizontal line at y=1 (perfect performance)
+    plt.axhline(y=1.0, color='r', linestyle='--', alpha=0.5, linewidth=2, label='Perfect (Performance=1)')
+    
+    plt.xlabel('Number of Agents (n)', fontsize=24)
+    plt.ylabel('Performance', fontsize=24)
     plt.title(f'MES vs MES + AV Comparison\n'
               f'(m={m}, α={alpha}, B={budget}, utility={utility_type})',
-              fontsize=14, fontweight='bold')
-    plt.legend(fontsize=11)
+              fontsize=28, fontweight='bold')
+    plt.legend(fontsize=20)
     plt.grid(True, alpha=0.3)
-    plt.ylim([0, 1.1])
+    
+    # Adjust y-axis to use most of the visual space
+    all_means = [m for r in results.values() for m in r['mean']]
+    all_stds = [s for r in results.values() for s in r['std']]
+    y_min = max(0, min(all_means) - 2 * max(all_stds) if all_stds else 0)
+    y_max = min(1.05, max(all_means) + 2 * max(all_stds) if all_stds else 1.05)
+    plt.ylim([y_min, y_max])
+    plt.xticks(fontsize=20)
+    plt.yticks(fontsize=20)
     plt.tight_layout()
     
     if filename is None:
-        filename = f'mes_vs_mes_av_m{m}_alpha{alpha}_B{budget}_{utility_type}.png'
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'mes_vs_mes_av_m{m}_alpha{alpha}_B{budget}_{utility_type}_{timestamp}.png'
     # Save to plots/simulation_mes_vs_mes_av folder
     os.makedirs('plots/simulation_mes_vs_mes_av', exist_ok=True)
     filepath = os.path.join('plots/simulation_mes_vs_mes_av', filename)
@@ -161,10 +188,10 @@ def plot_mes_vs_mes_av(n_values: List[int], results: dict, rule_names: List[str]
 
 if __name__ == "__main__":
     # Simulation parameters
-    n_values = [50, 100, 200]
+    n_values = list(range(10, 201, 10))  # n=10 to n=200 in steps of 10
     m = 8  # number of alternatives
-    alpha = 3.0  # cost ratio (max/min)
-    budget = 15.0
+    alpha = 5.0  # cost ratio (max/min) - non-unit cost simulation
+    budget = 8.0
     quality_range = (0, 1)  # binary qualities
     utility_type = 'normal'  # or 'cost_proportional'
     
@@ -188,19 +215,5 @@ if __name__ == "__main__":
     
     # Plot results
     plot_mes_vs_mes_av(n_values, results, rule_names, m, alpha, budget, utility_type)
-    
-    # Run finer-grained simulation for small n values
-    print("\n" + "=" * 60)
-    print("Running finer-grained MES vs MES + AV comparison (n = 5, 10, 20, 50, 100, 250)")
-    print("=" * 60)
-    n_values_fine = [5, 10, 20, 50, 100, 250]
-    results_fine, rule_names_fine = run_mes_vs_mes_av_comparison(
-        n_values_fine, m, alpha, budget, quality_range,
-        utility_type, num_samples=30, num_trials=5
-    )
-    
-    # Plot finer-grained results
-    filename_fine = f'mes_vs_mes_av_m{m}_alpha{alpha}_B{budget}_{utility_type}_fine.png'
-    plot_mes_vs_mes_av(n_values_fine, results_fine, rule_names_fine, m, alpha, budget, utility_type, filename=filename_fine)
     
     print("\nSimulation complete!")

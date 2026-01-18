@@ -12,7 +12,7 @@ from typing import List, Tuple
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, greedy_cover, method_of_equal_shares, phragmen,
+    approval_voting, greedy_cover, method_of_equal_shares, mes_plus_av, phragmen,
     proportional_approval_voting,
     calculate_informed_ratio, generate_instance
 )
@@ -44,6 +44,7 @@ def run_unit_vs_general_comparison(n_values: List[int], m: int, alpha_values: Li
         'AV': approval_voting,
         'GC': greedy_cover,
         'MES': method_of_equal_shares,
+        'MES+AV': mes_plus_av,
         'Phragmen': phragmen
     }
     
@@ -51,7 +52,10 @@ def run_unit_vs_general_comparison(n_values: List[int], m: int, alpha_values: Li
     if m <= 12:
         voting_rules['PAV'] = proportional_approval_voting
     
-    results = {alpha: {rule: [] for rule in voting_rules.keys()} for alpha in alpha_values}
+    results = {
+        alpha: {rule: {'mean': [], 'std': []} for rule in voting_rules.keys()}
+        for alpha in alpha_values
+    }
     
     for alpha in alpha_values:
         print(f"\n{'='*60}")
@@ -75,10 +79,11 @@ def run_unit_vs_general_comparison(n_values: List[int], m: int, alpha_values: Li
                         print(f"\n    Error in {rule_name}: {e}")
                         rule_ratios[rule_name].append(0.0)
             
-            # Average over trials
+            # Calculate mean and std over trials
             for rule_name in voting_rules.keys():
-                avg_ratio = np.mean(rule_ratios[rule_name])
-                results[alpha][rule_name].append(avg_ratio)
+                ratios = rule_ratios[rule_name]
+                results[alpha][rule_name]['mean'].append(np.mean(ratios))
+                results[alpha][rule_name]['std'].append(np.std(ratios))
             print("done")
     
     return results, voting_rules.keys()
@@ -87,34 +92,57 @@ def run_unit_vs_general_comparison(n_values: List[int], m: int, alpha_values: Li
 def plot_unit_vs_general(n_values: List[int], results: dict, rule_names: List[str],
                          alpha_values: List[float], m: int, budget: float,
                          utility_type: str, filename: str = None):
-    """Plot unit cost vs general cost comparison."""
+    """Plot unit cost vs general cost comparison with error bars."""
     import os
     n_plots = len(rule_names)
     n_cols = 2
     n_rows = (n_plots + n_cols - 1) // n_cols
     
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(14, 5 * n_rows))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(16, 6 * n_rows))
     if n_plots == 1:
         axes = [axes]
     elif n_rows == 1:
         axes = axes.reshape(1, -1)
     axes = axes.flatten()
     
+    # Define markers and linestyles for alpha values
+    alpha_styles = {
+        1.0: {'marker': 'o', 'linestyle': '-', 'color': '#1f77b4'},
+        2.0: {'marker': 's', 'linestyle': '--', 'color': '#ff7f0e'},
+        3.0: {'marker': '^', 'linestyle': '-.', 'color': '#2ca02c'},
+        5.0: {'marker': 'v', 'linestyle': ':', 'color': '#d62728'}
+    }
+    
     for idx, rule_name in enumerate(rule_names):
         ax = axes[idx]
         
         # Plot for each alpha value
         for alpha in alpha_values:
-            ratios = results[alpha][rule_name]
+            means = results[alpha][rule_name]['mean']
+            stds = results[alpha][rule_name]['std']
+            style = alpha_styles.get(alpha, {'marker': 'o', 'linestyle': '-', 'color': 'black'})
             label = f"α={alpha}" + (" (unit cost)" if alpha == 1.0 else " (general cost)")
-            ax.plot(n_values, ratios, marker='o', label=label, linewidth=2)
+            ax.errorbar(n_values, means, yerr=stds,
+                       marker=style['marker'], linestyle=style['linestyle'],
+                       color=style['color'], label=label, linewidth=3, markersize=8,
+                       capsize=5, capthick=2, elinewidth=2)
         
-        ax.set_xlabel('Number of Agents (n)', fontsize=11)
-        ax.set_ylabel('Informed Ratio', fontsize=11)
-        ax.set_title(f'{rule_name}', fontsize=12, fontweight='bold')
-        ax.legend(fontsize=9)
+        # Add horizontal line at y=1 (perfect performance)
+        ax.axhline(y=1.0, color='r', linestyle='--', alpha=0.5, linewidth=2, label='Perfect (Performance=1)')
+        
+        ax.set_xlabel('Number of Agents (n)', fontsize=22)
+        ax.set_ylabel('Performance', fontsize=22)
+        ax.set_title(f'{rule_name}', fontsize=24, fontweight='bold')
+        ax.legend(fontsize=18)
         ax.grid(True, alpha=0.3)
-        ax.set_ylim([0, 1.1])
+        
+        # Adjust y-axis to use most of the visual space
+        all_means = [m for alpha in alpha_values for m in results[alpha][rule_name]['mean']]
+        all_stds = [s for alpha in alpha_values for s in results[alpha][rule_name]['std']]
+        y_min = max(0, min(all_means) - 2 * max(all_stds) if all_stds else 0)
+        y_max = min(1.05, max(all_means) + 2 * max(all_stds) if all_stds else 1.05)
+        ax.set_ylim([y_min, y_max])
+        ax.tick_params(labelsize=18)
     
     # Hide unused subplots
     for idx in range(n_plots, len(axes)):
@@ -122,11 +150,13 @@ def plot_unit_vs_general(n_values: List[int], results: dict, rule_names: List[st
     
     plt.suptitle(f'Unit Cost (α=1) vs General Cost (α>1) Comparison\n'
                  f'(m={m}, B={budget}, utility={utility_type})',
-                 fontsize=14, fontweight='bold', y=0.995)
+                 fontsize=28, fontweight='bold', y=0.995)
     plt.tight_layout(rect=[0, 0, 1, 0.98])
     
     if filename is None:
-        filename = f'unit_vs_general_cost_m{m}_B{budget}_{utility_type}.png'
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'unit_vs_general_cost_m{m}_B{budget}_{utility_type}_{timestamp}.png'
     # Save to plots/simulation_unit_vs_general folder
     os.makedirs('plots/simulation_unit_vs_general', exist_ok=True)
     filepath = os.path.join('plots/simulation_unit_vs_general', filename)
@@ -141,10 +171,10 @@ def plot_unit_vs_general(n_values: List[int], results: dict, rule_names: List[st
 
 if __name__ == "__main__":
     # Simulation parameters
-    n_values = [50, 100, 200]
+    n_values = list(range(10, 201, 10))  # n=10 to n=200 in steps of 10
     m = 8  # number of alternatives
     alpha_values = [1.0, 2.0, 3.0, 5.0]  # 1.0 = unit cost, >1.0 = general cost
-    budget = 15.0
+    budget = 8.0
     quality_range = (0, 1)  # binary qualities
     utility_type = 'normal'  # or 'cost_proportional'
     
@@ -168,20 +198,6 @@ if __name__ == "__main__":
     
     # Plot results
     plot_unit_vs_general(n_values, results, rule_names, alpha_values, m, budget, utility_type)
-    
-    # Run finer-grained simulation for small n values
-    print("\n" + "=" * 60)
-    print("Running finer-grained unit vs general comparison (n = 5, 10, 20, 50, 100, 250)")
-    print("=" * 60)
-    n_values_fine = [5, 10, 20, 50, 100, 250]
-    results_fine, rule_names_fine = run_unit_vs_general_comparison(
-        n_values_fine, m, alpha_values, budget, quality_range,
-        utility_type, num_samples=30, num_trials=5
-    )
-    
-    # Plot finer-grained results
-    filename_fine = f'unit_vs_general_cost_m{m}_B{budget}_{utility_type}_fine.png'
-    plot_unit_vs_general(n_values_fine, results_fine, rule_names_fine, alpha_values, m, budget, utility_type, filename=filename_fine)
     
     print("\nSimulation complete!")
 

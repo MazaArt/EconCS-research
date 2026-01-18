@@ -1,7 +1,7 @@
 """
 Convergence Analysis Simulation
 
-This script analyzes the asymptotic convergence of informed ratios as n increases,
+This script analyzes the asymptotic convergence of performance (ratio to optimal knapsack) as n increases,
 with confidence intervals and error bars.
 """
 
@@ -12,7 +12,7 @@ from typing import List, Tuple
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, greedy_cover, method_of_equal_shares, phragmen,
+    approval_voting, greedy_cover, method_of_equal_shares, mes_plus_av, phragmen,
     proportional_approval_voting,
     calculate_informed_ratio, generate_instance
 )
@@ -44,6 +44,7 @@ def run_convergence_analysis(n_values: List[int], m: int, alpha: float,
         'AV': approval_voting,
         'GC': greedy_cover,
         'MES': method_of_equal_shares,
+        'MES+AV': mes_plus_av,
         'Phragmen': phragmen
     }
     
@@ -68,7 +69,7 @@ def run_convergence_analysis(n_values: List[int], m: int, alpha: float,
             # Generate instance
             instance = generate_instance(n, m, alpha, budget, quality_range, seed=trial)
             
-            # Calculate informed ratio for each rule
+            # Calculate performance (ratio to optimal) for each rule
             for rule_name, rule_func in voting_rules.items():
                 try:
                     ratio = calculate_informed_ratio(instance, rule_func, use_cost_proportional, num_samples)
@@ -119,12 +120,11 @@ def plot_convergence(n_values: List[int], results: dict, rule_names: List[str],
         means = results[rule_name]['mean']
         stds = results[rule_name]['std']
         
-        # Plot mean line
-        ax.plot(n_values, means, marker='o', label='Mean', linewidth=2, markersize=8)
-        
-        # Plot error bars (standard deviation)
-        ax.errorbar(n_values, means, yerr=stds, fmt='none', 
-                   capsize=5, capthick=1.5, alpha=0.6, label=f'±1 std')
+        # Plot with error bars
+        ax.errorbar(n_values, means, yerr=stds,
+                   marker='o', linestyle='-', label='Mean ± std',
+                   linewidth=3, markersize=8,
+                   capsize=5, capthick=2, elinewidth=2)
         
         if show_confidence and has_scipy and len(results[rule_name]['all'][0]) > 1:
             # Calculate confidence intervals using t-distribution
@@ -136,7 +136,8 @@ def plot_convergence(n_values: List[int], results: dict, rule_names: List[str],
                     t_critical = stats.t.ppf((1 + confidence_level) / 2, len(all_ratios) - 1)
                     sem = np.std(all_ratios) / np.sqrt(len(all_ratios))
                     ci = t_critical * sem
-                    lower_bound.append(means[i] - ci)
+                    # Clip lower bound to be at least 0 (performance can't be negative)
+                    lower_bound.append(max(0.0, means[i] - ci))
                     upper_bound.append(means[i] + ci)
                 else:
                     lower_bound.append(means[i])
@@ -146,15 +147,34 @@ def plot_convergence(n_values: List[int], results: dict, rule_names: List[str],
             ax.fill_between(n_values, lower_bound, upper_bound, alpha=0.2, 
                            label=f'{int(confidence_level*100)}% CI')
         
-        # Add horizontal line at y=1 (perfect convergence)
-        ax.axhline(y=1.0, color='r', linestyle='--', alpha=0.5, label='Perfect (IR=1)')
+        # Add horizontal line at y=1 (perfect performance)
+        ax.axhline(y=1.0, color='r', linestyle='--', alpha=0.5, label='Perfect (Performance=1)')
         
-        ax.set_xlabel('Number of Agents (n)', fontsize=11)
-        ax.set_ylabel('Informed Ratio', fontsize=11)
-        ax.set_title(f'{rule_name} Convergence', fontsize=12, fontweight='bold')
-        ax.legend(fontsize=9, loc='best')
+        ax.set_xlabel('Number of Agents (n)', fontsize=22)
+        ax.set_ylabel('Performance', fontsize=22)
+        ax.set_title(f'{rule_name} Convergence', fontsize=24, fontweight='bold')
+        ax.legend(fontsize=18, loc='best')
         ax.grid(True, alpha=0.3)
-        ax.set_ylim([0, 1.15])
+        
+        # Adjust y-axis to use most of the visual space - ensure it goes from 0 to positive values
+        means = results[rule_name]['mean']
+        stds = results[rule_name]['std']
+        if means and stds:
+            y_min = max(0.0, min(means) - 2 * max(stds))
+            y_max = min(1.05, max(means) + 2 * max(stds))
+        elif means:
+            y_min = max(0.0, min(means) - 0.05)
+            y_max = min(1.05, max(means) + 0.05)
+        else:
+            y_min = 0.0
+            y_max = 1.05
+        # Ensure y_min is never negative and y_min < y_max (critical to prevent inversion)
+        y_min = max(0.0, y_min)
+        if y_min >= y_max:
+            y_min = max(0.0, y_max - 0.1)
+        # Set y-axis limits (bottom < top, both >= 0)
+        ax.set_ylim([y_min, y_max])
+        ax.tick_params(labelsize=18)
     
     # Hide unused subplots
     for idx in range(n_rules, len(axes)):
@@ -162,11 +182,13 @@ def plot_convergence(n_values: List[int], results: dict, rule_names: List[str],
     
     plt.suptitle(f'Asymptotic Convergence Analysis\n'
                  f'(m={m}, α={alpha}, B={budget}, utility={utility_type})',
-                 fontsize=14, fontweight='bold', y=0.995)
+                 fontsize=28, fontweight='bold', y=0.995)
     plt.tight_layout(rect=[0, 0, 1, 0.98])
     
     if filename is None:
-        filename = f'convergence_m{m}_alpha{alpha}_B{budget}_{utility_type}.png'
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'convergence_m{m}_alpha{alpha}_B{budget}_{utility_type}_{timestamp}.png'
     # Save to plots/simulation_convergence folder
     os.makedirs('plots/simulation_convergence', exist_ok=True)
     filepath = os.path.join('plots/simulation_convergence', filename)
@@ -181,10 +203,12 @@ def plot_convergence(n_values: List[int], results: dict, rule_names: List[str],
 
 if __name__ == "__main__":
     # Simulation parameters
-    n_values = [20, 50, 100, 200]  # Extended range for convergence
+    # Convergence to 1.0 should only happen under alpha = 1 (unit cost)
+    # Budget should be less than number of alternatives to observe convergence
+    n_values = list(range(10, 201, 10))  # n=10 to n=200 in steps of 10
     m = 8  # number of alternatives
-    alpha = 1.0  # Unit cost for convergence analysis
-    budget = 15.0
+    alpha = 1.0  # Unit cost - required for convergence to 1.0
+    budget = 5.0  # Budget < m (8) - can't afford all alternatives
     quality_range = (0, 1)  # binary qualities
     utility_type = 'normal'  # or 'cost_proportional'
     
@@ -215,27 +239,6 @@ if __name__ == "__main__":
         print("Warning: scipy not available, plotting without confidence intervals")
         plot_convergence(n_values, results, rule_names, m, alpha, budget, utility_type,
                         show_confidence=False, confidence_level=0.95)
-    
-    # Run finer-grained simulation for small n values
-    print("\n" + "=" * 60)
-    print("Running finer-grained convergence analysis (n = 5, 10, 20, 50, 100, 250)")
-    print("=" * 60)
-    n_values_fine = [5, 10, 20, 50, 100, 250]
-    results_fine, rule_names_fine = run_convergence_analysis(
-        n_values_fine, m, alpha, budget, quality_range,
-        utility_type, num_samples=30, num_trials=10
-    )
-    
-    # Plot finer-grained results with modified filename
-    filename_fine = f'convergence_m{m}_alpha{alpha}_B{budget}_{utility_type}_fine.png'
-    try:
-        from scipy import stats
-        plot_convergence(n_values_fine, results_fine, rule_names_fine, m, alpha, budget, utility_type,
-                        show_confidence=True, confidence_level=0.95, filename=filename_fine)
-    except ImportError:
-        print("Warning: scipy not available, plotting without confidence intervals")
-        plot_convergence(n_values_fine, results_fine, rule_names_fine, m, alpha, budget, utility_type,
-                        show_confidence=False, confidence_level=0.95, filename=filename_fine)
     
     print("\nSimulation complete!")
 
