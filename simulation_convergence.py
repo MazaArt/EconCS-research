@@ -227,7 +227,7 @@ if __name__ == "__main__":
     # Run simulation for original n values
     results, rule_names = run_convergence_analysis(
         n_values, m, alpha, budget, quality_range,
-        utility_type, num_samples=30, num_trials=10  # More trials for better statistics
+        utility_type, num_samples=30, num_trials=5  
     )
     
     # Plot results
