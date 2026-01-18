@@ -90,6 +90,11 @@ def plot_budget_scaled(budget_values: List[float], results: dict, rule_names: Li
                        filename: str = None):
     """Plot performance with error bars vs budget values."""
     import os
+    
+    # Control flag: Set to True to show STD bars, False to show only means
+    # SHOW_STD_BARS = True   # Uncomment this line to enable STD bars
+    SHOW_STD_BARS = False    # Comment out this line to disable STD bars
+    
     plt.figure(figsize=(12, 8))
     
     # Define colors, markers, and linestyles for each rule
@@ -107,10 +112,17 @@ def plot_budget_scaled(budget_values: List[float], results: dict, rule_names: Li
         stds = results[rule_name]['std']
         style = rule_styles.get(rule_name, {'color': 'black', 'marker': 'o', 'linestyle': '-', 'markersize': 8})
         
-        plt.plot(budget_values, means,
-                    marker=style['marker'], linestyle=style['linestyle'],
-                    color=style['color'], label=rule_name,
-                    linewidth=3, markersize=style['markersize'])
+        if SHOW_STD_BARS:
+            plt.errorbar(budget_values, means, yerr=stds,
+                        marker=style['marker'], linestyle=style['linestyle'],
+                        color=style['color'], label=rule_name,
+                        linewidth=3, markersize=style['markersize'],
+                        capsize=5, capthick=2, elinewidth=2)
+        else:
+            plt.plot(budget_values, means,
+                        marker=style['marker'], linestyle=style['linestyle'],
+                        color=style['color'], label=rule_name,
+                        linewidth=3, markersize=style['markersize'])
     
     # Add horizontal line at y=1 (perfect performance)
     plt.axhline(y=1.0, color='r', linestyle='--', alpha=0.5, linewidth=2, label='Perfect (Performance=1)')
@@ -124,8 +136,13 @@ def plot_budget_scaled(budget_values: List[float], results: dict, rule_names: Li
     
     # Adjust y-axis to use most of the visual space
     all_means = [m for r in results.values() for m in r['mean']]
-    y_min = max(0, min(all_means) - 0.05)
-    y_max = min(1.05, max(all_means) + 0.05)
+    if SHOW_STD_BARS:
+        all_stds = [s for r in results.values() for s in r['std']]
+        y_min = max(0, min(all_means) - 2 * max(all_stds) if all_stds else 0)
+        y_max = min(1.05, max(all_means) + 2 * max(all_stds) if all_stds else 1.05)
+    else:
+        y_min = max(0, min(all_means) - 0.05)
+        y_max = min(1.05, max(all_means) + 0.05)
     plt.ylim([y_min, y_max])
     
     plt.xticks(fontsize=20)

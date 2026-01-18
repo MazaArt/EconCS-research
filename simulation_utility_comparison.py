@@ -92,6 +92,11 @@ def plot_utility_comparison(n_values: List[int], results: dict, rule_names: List
                            m: int, alpha: float, budget: float, filename: str = None):
     """Plot comparison between normal and cost-proportional utility functions."""
     import os
+    
+    # Control flag: Set to True to show STD bars, False to show only means
+    # SHOW_STD_BARS = True   # Uncomment this line to enable STD bars
+    SHOW_STD_BARS = False    # Comment out this line to disable STD bars
+    
     n_rules = len(rule_names)
     n_cols = 2
     n_rows = (n_rules + n_cols - 1) // n_cols
@@ -114,9 +119,15 @@ def plot_utility_comparison(n_values: List[int], results: dict, rule_names: List
             marker = 'o' if utility_type == 'normal' else 's'
             linestyle = '-' if utility_type == 'normal' else '--'
             color = '#1f77b4' if utility_type == 'normal' else '#ff7f0e'
-            ax.plot(n_values, means,
-                       marker=marker, linestyle=linestyle, color=color,
-                       label=label, linewidth=3, markersize=8)
+            if SHOW_STD_BARS:
+                ax.errorbar(n_values, means, yerr=stds,
+                           marker=marker, linestyle=linestyle, color=color,
+                           label=label, linewidth=3, markersize=8,
+                           capsize=5, capthick=2, elinewidth=2)
+            else:
+                ax.plot(n_values, means,
+                           marker=marker, linestyle=linestyle, color=color,
+                           label=label, linewidth=3, markersize=8)
         
         # Add horizontal line at y=1 (perfect performance)
         ax.axhline(y=1.0, color='r', linestyle='--', alpha=0.5, linewidth=2, label='Perfect (Performance=1)')
@@ -129,8 +140,13 @@ def plot_utility_comparison(n_values: List[int], results: dict, rule_names: List
         
         # Adjust y-axis to use most of the visual space
         all_means = [m for ut in ['normal', 'cost_proportional'] for m in results[ut][rule_name]['mean']]
-        y_min = max(0, min(all_means) - 0.05)
-        y_max = min(1.05, max(all_means) + 0.05)
+        if SHOW_STD_BARS:
+            all_stds = [s for ut in ['normal', 'cost_proportional'] for s in results[ut][rule_name]['std']]
+            y_min = max(0, min(all_means) - 2 * max(all_stds) if all_stds else 0)
+            y_max = min(1.05, max(all_means) + 2 * max(all_stds) if all_stds else 1.05)
+        else:
+            y_min = max(0, min(all_means) - 0.05)
+            y_max = min(1.05, max(all_means) + 0.05)
         ax.set_ylim([y_min, y_max])
         ax.tick_params(labelsize=18)
     
