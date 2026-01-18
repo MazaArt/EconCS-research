@@ -612,11 +612,10 @@ def plot_results(n_values: List[int], results: dict, title: str = "Performance v
         stds = results[rule_name]['std']
         style = rule_styles.get(rule_name, {'color': 'black', 'marker': 'o', 'linestyle': '-', 'markersize': 8})
         
-        plt.errorbar(n_values, means, yerr=stds, 
+        plt.plot(n_values, means, 
                     marker=style['marker'], linestyle=style['linestyle'],
                     color=style['color'], label=rule_name, 
-                    linewidth=3, markersize=style['markersize'],
-                    capsize=5, capthick=2, elinewidth=2)
+                    linewidth=3, markersize=style['markersize'])
     
     # Add horizontal line at y=1 (perfect performance)
     plt.axhline(y=1.0, color='r', linestyle='--', alpha=0.5, linewidth=2, label='Perfect (Performance=1)')
@@ -629,14 +628,9 @@ def plot_results(n_values: List[int], results: dict, title: str = "Performance v
     
     # Adjust y-axis to use most of the visual space
     all_means = [m for r in results.values() for m in r['mean']]
-    all_stds = [s for r in results.values() for s in r['std']]
     if all_means:
-        if all_stds:
-            y_min = max(0.0, min(all_means) - 2 * max(all_stds))
-            y_max = min(1.05, max(all_means) + 2 * max(all_stds))
-        else:
-            y_min = max(0.0, min(all_means) - 0.05)
-            y_max = min(1.05, max(all_means) + 0.05)
+        y_min = max(0.0, min(all_means) - 0.05)
+        y_max = min(1.05, max(all_means) + 0.05)
         # Ensure y_min is never negative
         y_min = max(0.0, y_min)
     else:

@@ -122,10 +122,9 @@ def plot_unit_vs_general(n_values: List[int], results: dict, rule_names: List[st
             stds = results[alpha][rule_name]['std']
             style = alpha_styles.get(alpha, {'marker': 'o', 'linestyle': '-', 'color': 'black'})
             label = f"α={alpha}" + (" (unit cost)" if alpha == 1.0 else " (general cost)")
-            ax.errorbar(n_values, means, yerr=stds,
+            ax.plot(n_values, means,
                        marker=style['marker'], linestyle=style['linestyle'],
-                       color=style['color'], label=label, linewidth=3, markersize=8,
-                       capsize=5, capthick=2, elinewidth=2)
+                       color=style['color'], label=label, linewidth=3, markersize=8)
         
         # Add horizontal line at y=1 (perfect performance)
         ax.axhline(y=1.0, color='r', linestyle='--', alpha=0.5, linewidth=2, label='Perfect (Performance=1)')
@@ -138,9 +137,8 @@ def plot_unit_vs_general(n_values: List[int], results: dict, rule_names: List[st
         
         # Adjust y-axis to use most of the visual space
         all_means = [m for alpha in alpha_values for m in results[alpha][rule_name]['mean']]
-        all_stds = [s for alpha in alpha_values for s in results[alpha][rule_name]['std']]
-        y_min = max(0, min(all_means) - 2 * max(all_stds) if all_stds else 0)
-        y_max = min(1.05, max(all_means) + 2 * max(all_stds) if all_stds else 1.05)
+        y_min = max(0, min(all_means) - 0.05)
+        y_max = min(1.05, max(all_means) + 0.05)
         ax.set_ylim([y_min, y_max])
         ax.tick_params(labelsize=18)
     
