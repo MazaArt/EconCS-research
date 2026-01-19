@@ -174,6 +174,7 @@ def greedy_cover(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int
     while remaining:
         best_j = None
         best_new_covered = -1
+        best_approval = -1
         
         for j in remaining:
             if costs[j] > remaining_budget:
@@ -182,9 +183,16 @@ def greedy_cover(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int
             # Count how many NEW agents this alternative would cover
             approvers = votes[:, j] == 1
             new_covered = np.sum(approvers & ~covered)
+            approval_count = np.sum(approvers)
             
-            if new_covered > best_new_covered:
+            # Select alternative with most new coverage
+            # Break ties by approval count (higher is better), then by index (lower is better for determinism)
+            if (new_covered > best_new_covered or 
+                (new_covered == best_new_covered and approval_count > best_approval) or
+                (new_covered == best_new_covered and approval_count == best_approval and 
+                 (best_j is None or j < best_j))):
                 best_new_covered = new_covered
+                best_approval = approval_count
                 best_j = j
         
         if best_j is None or best_new_covered == 0:
