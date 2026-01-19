@@ -1,8 +1,8 @@
 """
-MES vs MES + AV Comparison Simulation
+GC vs GC + AV Comparison Simulation
 
-This script compares the informed ratio performance between standard MES
-and a hybrid approach: MES followed by AV for budget exhaustion.
+This script compares the informed ratio performance between standard Greedy Cover (GC)
+and a hybrid approach: GC followed by AV for budget exhaustion.
 """
 
 import sys
@@ -13,64 +13,17 @@ from typing import List, Tuple, Set
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, method_of_equal_shares,
+    approval_voting, greedy_cover, gc_plus_av,
     calculate_informed_ratio, generate_instance
 )
 
 
-def mes_plus_av(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+def run_gc_vs_gc_av_comparison(n_values: List[int], m: int, alpha: float,
+                               budget: float, quality_range: Tuple[int, int],
+                               utility_type: str = 'normal',
+                               num_samples: int = 50, num_trials: int = 10) -> dict:
     """
-    Hybrid MES + AV: First run MES, then use AV to exhaust remaining budget.
-    
-    Args:
-        votes: (n, m) binary array, votes[i, j] = 1 if agent i approves alternative j
-        costs: (m,) array of costs
-        budget: budget constraint
-    
-    Returns:
-        Set of winning alternative indices
-    """
-    # First, run MES
-    mes_winning_set = method_of_equal_shares(votes, costs, budget)
-    
-    # Calculate remaining budget
-    used_budget = sum(costs[j] for j in mes_winning_set)
-    remaining_budget = budget - used_budget
-    
-    # If no remaining budget, return MES result
-    if remaining_budget <= 1e-6:  # Small threshold for floating point
-        return mes_winning_set
-    
-    # Use AV to fill remaining budget
-    m = len(costs)
-    approval_counts = votes.sum(axis=0)
-    
-    # Get alternatives not yet selected
-    remaining_alternatives = [j for j in range(m) if j not in mes_winning_set]
-    
-    if not remaining_alternatives:
-        return mes_winning_set
-    
-    # Sort by approval count (descending), break ties by index
-    remaining_alternatives.sort(key=lambda j: (approval_counts[j], -j), reverse=True)
-    
-    # Add alternatives until budget is exhausted
-    for j in remaining_alternatives:
-        if costs[j] <= remaining_budget:
-            mes_winning_set.add(j)
-            remaining_budget -= costs[j]
-        else:
-            break  # Can't afford any more alternatives
-    
-    return mes_winning_set
-
-
-def run_mes_vs_mes_av_comparison(n_values: List[int], m: int, alpha: float,
-                                 budget: float, quality_range: Tuple[int, int],
-                                 utility_type: str = 'normal',
-                                 num_samples: int = 50, num_trials: int = 10) -> dict:
-    """
-    Run simulation comparing MES vs MES + AV.
+    Run simulation comparing GC vs GC + AV.
     
     Args:
         n_values: list of n (number of agents) to test
@@ -88,8 +41,8 @@ def run_mes_vs_mes_av_comparison(n_values: List[int], m: int, alpha: float,
     use_cost_proportional = (utility_type == 'cost_proportional')
     
     voting_rules = {
-        'MES': method_of_equal_shares,
-        'MES + AV': mes_plus_av
+        'GC': greedy_cover,
+        'GC + AV': gc_plus_av
     }
     
     results = {
@@ -126,23 +79,23 @@ def run_mes_vs_mes_av_comparison(n_values: List[int], m: int, alpha: float,
     return results, voting_rules.keys()
 
 
-def plot_mes_vs_mes_av(n_values: List[int], results: dict, rule_names: List[str],
-                      m: int, alpha: float, budget: float, utility_type: str,
-                      filename: str = None):
-    """Plot comparison between MES and MES + AV with error bars."""
+def plot_gc_vs_gc_av(n_values: List[int], results: dict, rule_names: List[str],
+                     m: int, alpha: float, budget: float, utility_type: str,
+                     filename: str = None):
+    """Plot comparison between GC and GC + AV with error bars."""
     import os
     
     # Control flag: Set to True to show STD bars, False to show only means
     SHOW_STD_BARS = True   # Uncomment this line to enable STD bars
-    #SHOW_STD_BARS = False    # Comment out this line to disable STD bars
+    # SHOW_STD_BARS = False    # Comment out this line to disable STD bars
     
     plt.figure(figsize=(12, 8))
     
     # Define styles for each rule
     rule_styles = {
-        'MES': {'marker': 'o', 'linestyle': '-', 'color': '#2ca02c'},
-        'MES + AV': {'marker': 's', 'linestyle': '--', 'color': '#d62728'},
-        'MES+AV': {'marker': 's', 'linestyle': '--', 'color': '#d62728'}
+        'GC': {'marker': 'o', 'linestyle': '-', 'color': '#ff7f0e'},
+        'GC + AV': {'marker': 's', 'linestyle': '--', 'color': '#e377c2'},
+        'GC+AV': {'marker': 's', 'linestyle': '--', 'color': '#e377c2'}
     }
     
     # Plot for each rule
@@ -151,13 +104,16 @@ def plot_mes_vs_mes_av(n_values: List[int], results: dict, rule_names: List[str]
         stds = results[rule_name]['std']
         style = rule_styles.get(rule_name, {'marker': 'o', 'linestyle': '-', 'color': 'black'})
         if SHOW_STD_BARS:
-            container = plt.errorbar(n_values, means, yerr=stds,
-                        marker=style['marker'], linestyle=style['linestyle'],
-                        color=style['color'], label=rule_name,
-                        linewidth=3, markersize=8,
+            # Plot error bars first (transparent)
+            plt.errorbar(n_values, means, yerr=stds,
+                        linestyle='none', color=style['color'],
                         capsize=5, capthick=1.5, elinewidth=1.5,
-                        alpha=0.4)  # Alpha for error bars
-            container[0].set_alpha(1.0)  # Make the main line fully opaque
+                        alpha=0.4)
+            # Plot main line and markers on top (fully opaque)
+            plt.plot(n_values, means,
+                    marker=style['marker'], linestyle=style['linestyle'],
+                    color=style['color'], label=rule_name,
+                    linewidth=3, markersize=8)
         else:
             plt.plot(n_values, means,
                         marker=style['marker'], linestyle=style['linestyle'],
@@ -169,7 +125,7 @@ def plot_mes_vs_mes_av(n_values: List[int], results: dict, rule_names: List[str]
     
     plt.xlabel('Number of Agents (n)', fontsize=24)
     plt.ylabel('Performance', fontsize=24)
-    plt.title(f'MES vs MES + AV Comparison\n'
+    plt.title(f'GC vs GC + AV Comparison\n'
               f'(m={m}, α={alpha}, B={budget}, utility={utility_type})',
               fontsize=28, fontweight='bold')
     plt.legend(fontsize=20)
@@ -192,10 +148,10 @@ def plot_mes_vs_mes_av(n_values: List[int], results: dict, rule_names: List[str]
     if filename is None:
         from datetime import datetime
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f'mes_vs_mes_av_m{m}_alpha{alpha}_B{budget}_{utility_type}_{timestamp}.png'
-    # Save to plots/simulation_mes_vs_mes_av folder
-    os.makedirs('plots/simulation_mes_vs_mes_av', exist_ok=True)
-    filepath = os.path.join('plots/simulation_mes_vs_mes_av', filename)
+        filename = f'gc_vs_gc_av_m{m}_alpha{alpha}_B{budget}_{utility_type}_{timestamp}.png'
+    # Save to plots/simulation_gc_vs_gc_av folder
+    os.makedirs('plots/simulation_gc_vs_gc_av', exist_ok=True)
+    filepath = os.path.join('plots/simulation_gc_vs_gc_av', filename)
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     print(f"\nPlot saved as '{filepath}'")
     plt.show()
@@ -221,7 +177,7 @@ if __name__ == "__main__":
     utility_type = 'normal'  # or 'cost_proportional'
     
     print("=" * 60)
-    print("MES vs MES + AV Comparison Simulation")
+    print("GC vs GC + AV Comparison Simulation")
     print("=" * 60)
     print(f"Parameters:")
     print(f"  n values: {n_values}")
@@ -233,13 +189,13 @@ if __name__ == "__main__":
     print("=" * 60)
     
     # Run simulation for original n values
-    results, rule_names = run_mes_vs_mes_av_comparison(
+    results, rule_names = run_gc_vs_gc_av_comparison(
         n_values, m, alpha, budget, quality_range,
         utility_type, num_samples=30, num_trials=100
     )
     
     # Plot results
-    plot_mes_vs_mes_av(n_values, results, rule_names, m, alpha, budget, utility_type)
+    plot_gc_vs_gc_av(n_values, results, rule_names, m, alpha, budget, utility_type)
     
     # Statistical Analysis
     test_results, win_counts = run_pairwise_tests(results, rule_names, n_values, x_label='n')

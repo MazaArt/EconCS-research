@@ -5,6 +5,9 @@ This module implements voting rules (AV, PAV, Greedy Cover, MES, Phragmen),
 simulates PB instances, and calculates performance (ratio to optimal knapsack).
 """
 
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
+
 import numpy as np
 import matplotlib.pyplot as plt
 from itertools import product
@@ -60,51 +63,12 @@ def approval_voting(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[
     return winning_set
 
 
-def proportional_approval_voting(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+def approval_voting_per_cost(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
     """
-    PAV: Maximizes sum over agents of 1 + 1/2 + ... + 1/k for k approved winners.
-    
-    This is computationally expensive, so we use a greedy approximation for large instances.
-    """
-    n, m = votes.shape
-    
-    # For small instances, use exact enumeration
-    if m <= 15:
-        best_score = -np.inf
-        best_set = set()
-        
-        # Try all subsets (feasible for small m)
-        for r in range(1, min(2**m, 10000)):  # Limit to avoid explosion
-            subset = set()
-            for j in range(m):
-                if (r >> j) & 1:
-                    subset.add(j)
-            
-            total_cost = sum(costs[j] for j in subset)
-            if total_cost <= budget:
-                # Calculate PAV score
-                score = 0.0
-                for i in range(n):
-                    approved_count = sum(votes[i, j] for j in subset)
-                    for t in range(1, approved_count + 1):
-                        score += 1.0 / t
-                
-                if score > best_score:
-                    best_score = score
-                    best_set = subset
-        
-        return best_set if best_set else set()
-    else:
-        # For larger instances, use greedy approximation
-        return greedy_cover(votes, costs, budget)  # Fallback to GC
-
-
-def greedy_cover(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
-    """
-    Greedy Cover: Select alternatives with highest approval_count / cost ratio.
+    AV/Cost: Greedily select alternatives by approval_count/cost ratio (descending).
     
     Args:
-        votes: (n, m) binary array
+        votes: (n, m) binary array, votes[i, j] = 1 if agent i approves alternative j
         costs: (m,) array of costs
         budget: budget constraint
     
@@ -122,18 +86,57 @@ def greedy_cover(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int
         else:
             ratios[j] = np.inf
     
+    # Sort by ratio (descending), break ties by approval count, then by index
+    alternatives = sorted(range(m), key=lambda j: (ratios[j], approval_counts[j], -j), reverse=True)
+    
     winning_set = set()
     remaining_budget = budget
-    remaining = set(range(m))
     
-    while remaining:
-        # Find alternative with highest ratio
+    for j in alternatives:
+        if costs[j] <= remaining_budget:
+            winning_set.add(j)
+            remaining_budget -= costs[j]
+    
+    return winning_set
+
+
+def proportional_approval_voting(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    PAV (Sequential Greedy): Iteratively select alternative with highest marginal PAV gain.
+    
+    PAV score = sum over agents of (1 + 1/2 + ... + 1/k) for k approved winners.
+    
+    Args:
+        votes: (n, m) binary array
+        costs: (m,) array of costs
+        budget: budget constraint
+    
+    Returns:
+        Set of winning alternative indices
+    """
+    n, m = votes.shape
+    winning_set = set()
+    remaining_budget = budget
+    
+    # Track how many approved winners each agent has
+    approved_winners = np.zeros(n)
+    
+    while True:
         best_j = None
-        best_ratio = -1
+        best_gain = -np.inf
         
-        for j in remaining:
-            if costs[j] <= remaining_budget and ratios[j] > best_ratio:
-                best_ratio = ratios[j]
+        for j in range(m):
+            if j in winning_set or costs[j] > remaining_budget:
+                continue
+            
+            # Calculate marginal PAV gain: sum of 1/(k+1) for each approver
+            gain = 0.0
+            for i in range(n):
+                if votes[i, j] == 1:
+                    gain += 1.0 / (approved_winners[i] + 1)
+            
+            if gain > best_gain:
+                best_gain = gain
                 best_j = j
         
         if best_j is None:
@@ -141,14 +144,110 @@ def greedy_cover(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int
         
         winning_set.add(best_j)
         remaining_budget -= costs[best_j]
+        for i in range(n):
+            if votes[i, best_j] == 1:
+                approved_winners[i] += 1
+    
+    return winning_set
+
+
+def greedy_cover(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    Greedy Cover: Iteratively select the alternative that covers the most uncovered agents.
+    
+    An agent is "covered" once at least one alternative they approve has been selected.
+    
+    Args:
+        votes: (n, m) binary array
+        costs: (m,) array of costs
+        budget: budget constraint
+    
+    Returns:
+        Set of winning alternative indices
+    """
+    n, m = votes.shape
+    winning_set = set()
+    remaining_budget = budget
+    covered = np.zeros(n, dtype=bool)  # Track covered agents
+    remaining = set(range(m))
+    
+    while remaining:
+        best_j = None
+        best_new_covered = -1
+        
+        for j in remaining:
+            if costs[j] > remaining_budget:
+                continue
+            
+            # Count how many NEW agents this alternative would cover
+            approvers = votes[:, j] == 1
+            new_covered = np.sum(approvers & ~covered)
+            
+            if new_covered > best_new_covered:
+                best_new_covered = new_covered
+                best_j = j
+        
+        if best_j is None or best_new_covered == 0:
+            break
+        
+        # Update covered agents
+        covered |= (votes[:, best_j] == 1)
+        winning_set.add(best_j)
+        remaining_budget -= costs[best_j]
         remaining.remove(best_j)
     
     return winning_set
 
 
+def gc_plus_av(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    Hybrid GC + AV: First run Greedy Cover, then use AV to exhaust remaining budget.
+    
+    Args:
+        votes: (n, m) binary array, votes[i, j] = 1 if agent i approves alternative j
+        costs: (m,) array of costs
+        budget: budget constraint
+    
+    Returns:
+        Set of winning alternative indices
+    """
+    # First, run Greedy Cover
+    gc_winning_set = greedy_cover(votes, costs, budget)
+    
+    # Calculate remaining budget
+    used_budget = sum(costs[j] for j in gc_winning_set)
+    remaining_budget = budget - used_budget
+    
+    # If no remaining budget, return GC result
+    if remaining_budget <= 1e-9:
+        return gc_winning_set
+    
+    # Use AV to fill remaining budget
+    m = len(costs)
+    approval_counts = votes.sum(axis=0)
+    
+    # Get alternatives not yet selected
+    remaining_alternatives = [j for j in range(m) if j not in gc_winning_set]
+    
+    if not remaining_alternatives:
+        return gc_winning_set
+    
+    # Sort by approval count (descending), break ties by index
+    remaining_alternatives.sort(key=lambda j: (approval_counts[j], -j), reverse=True)
+    
+    # Add alternatives until budget is exhausted
+    for j in remaining_alternatives:
+        if costs[j] <= remaining_budget:
+            gc_winning_set.add(j)
+            remaining_budget -= costs[j]
+    
+    return gc_winning_set
+
+
 def method_of_equal_shares(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
     """
-    MES: Each agent gets budget share B/n, alternatives funded when sum of contributions >= cost.
+    MES: Each agent gets budget share B/n. In each round, select the alternative 
+    that can be afforded at the lowest maximum contribution (rho) per approver.
     
     Args:
         votes: (n, m) binary array
@@ -161,46 +260,130 @@ def method_of_equal_shares(votes: np.ndarray, costs: np.ndarray, budget: float) 
     n, m = votes.shape
     budget_shares = np.full(n, budget / n)
     winning_set = set()
-    funded = set()
+    remaining = set(range(m))
     
-    # Iteratively select alternatives
-    max_iterations = m  # Safety limit
-    for _ in range(max_iterations):
+    while remaining:
         best_j = None
-        min_payment = np.inf
+        best_rho = np.inf
         
-        # Find alternative that can be funded with minimum payment per agent
-        for j in range(m):
-            if j in funded:
+        for j in remaining:
+            approvers = np.where(votes[:, j] == 1)[0]
+            if len(approvers) == 0:
                 continue
             
-            approvers = [i for i in range(n) if votes[i, j] == 1]
-            if not approvers:
-                continue
-            
-            # Calculate minimum payment needed per approver
+            # Check if total available budget from approvers can cover cost
             total_available = sum(budget_shares[i] for i in approvers)
+            if total_available < costs[j] - 1e-9:
+                continue
             
-            if total_available >= costs[j]:
-                payment_per_agent = costs[j] / len(approvers)
-                if payment_per_agent < min_payment:
-                    min_payment = payment_per_agent
-                    best_j = j
+            # Find minimum rho such that sum of min(budget_shares[i], rho) >= costs[j]
+            approver_budgets = sorted([budget_shares[i] for i in approvers])
+            
+            rho = None
+            cumsum = 0.0
+            for k, b in enumerate(approver_budgets):
+                # Agents 0..k-1 pay their full budget (cumsum)
+                # Agents k..end pay rho each
+                # Need: cumsum + (len(approvers) - k) * rho >= costs[j]
+                needed_rho = (costs[j] - cumsum) / (len(approvers) - k)
+                if needed_rho <= b + 1e-9:
+                    rho = needed_rho
+                    break
+                cumsum += b
+            
+            if rho is not None and rho < best_rho:
+                best_rho = rho
+                best_j = j
         
         if best_j is None:
             break
         
-        # Fund the alternative
-        approvers = [i for i in range(n) if votes[i, best_j] == 1]
-        payment_per_agent = costs[best_j] / len(approvers)
-        
+        # Deduct payments from approvers
+        approvers = np.where(votes[:, best_j] == 1)[0]
         for i in approvers:
-            if budget_shares[i] >= payment_per_agent:
-                budget_shares[i] -= payment_per_agent
+            payment = min(budget_shares[i], best_rho)
+            budget_shares[i] -= payment
         
         winning_set.add(best_j)
-        funded.add(best_j)
+        remaining.remove(best_j)
     
+    return winning_set
+
+
+def phragmen(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    Fixed Phragmen implementation.
+    Logic: Find x such that sum_{i in approvers} max(x - loads[i], 0) = cost[j]
+    """
+    n, m = votes.shape
+    loads = np.zeros(n)
+    winning_set = set()
+    remaining = set(range(m))
+    spent = 0.0
+    
+    while remaining:
+        best_j = None
+        best_x = np.inf
+        
+        for j in remaining:
+            if spent + costs[j] > budget + 1e-9:
+                continue
+            
+            approvers = np.where(votes[:, j] == 1)[0]
+            if len(approvers) == 0:
+                continue
+            
+            # 1. Sort loads of approvers ascending
+            approver_loads = sorted([loads[i] for i in approvers])
+            num_approvers = len(approvers)
+            
+            # 2. We want to find x. The equation is:
+            #    sum_{i where l_i < x} (x - l_i) = cost
+            #    k * x - sum(l_i for first k) = cost
+            #    x = (cost + sum(l_i for first k)) / k
+            
+            x = None
+            current_sum_loads = 0.0
+            
+            # Iterate through the number of agents (k) that are "paying" (load < x)
+            # k goes from 1 to num_approvers
+            for k in range(1, num_approvers + 1):
+                # Add the k-th smallest load (index k-1) to the sum
+                current_sum_loads += approver_loads[k-1]
+                
+                # Calculate candidate x assuming exactly k agents pay
+                proposed_x = (costs[j] + current_sum_loads) / k
+                
+                # Check consistency:
+                # The proposed x must be larger than the (k-1)-th load (the largest of the paying group)
+                # And smaller than or equal to the k-th load (the smallest of the non-paying group, if any)
+                
+                lower_bound = approver_loads[k-1]
+                upper_bound = approver_loads[k] if k < num_approvers else np.inf
+                
+                if proposed_x >= lower_bound - 1e-9 and proposed_x <= upper_bound + 1e-9:
+                    x = proposed_x
+                    break
+            
+            # Fallback (should typically be caught by k=num_approvers case, but for safety)
+            if x is None:
+                 x = (costs[j] + current_sum_loads) / num_approvers
+            if x < best_x:
+                best_x = x
+                best_j = j
+        
+        if best_j is None:
+            break
+            
+        # Update loads
+        approvers = np.where(votes[:, best_j] == 1)[0]
+        for i in approvers:
+            loads[i] = max(loads[i], best_x)
+            
+        winning_set.add(best_j)
+        spent += costs[best_j]
+        remaining.remove(best_j)
+        
     return winning_set
 
 
@@ -224,7 +407,7 @@ def mes_plus_av(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]
     remaining_budget = budget - used_budget
     
     # If no remaining budget, return MES result
-    if remaining_budget <= 1e-6:  # Small threshold for floating point
+    if remaining_budget <= 1e-9:
         return mes_winning_set
     
     # Use AV to fill remaining budget
@@ -245,67 +428,8 @@ def mes_plus_av(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]
         if costs[j] <= remaining_budget:
             mes_winning_set.add(j)
             remaining_budget -= costs[j]
-        else:
-            break  # Can't afford any more alternatives
     
     return mes_winning_set
-
-
-def phragmen(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
-    """
-    Phragmen: Maintains loads for agents, selects alternative minimizing max load.
-    
-    Args:
-        votes: (n, m) binary array
-        costs: (m,) array of costs
-        budget: budget constraint
-    
-    Returns:
-        Set of winning alternative indices
-    """
-    n, m = votes.shape
-    loads = np.zeros(n)
-    winning_set = set()
-    remaining = set(range(m))
-    
-    while remaining:
-        best_j = None
-        min_max_load = np.inf
-        
-        for j in remaining:
-            total_cost = sum(costs[k] for k in winning_set) + costs[j]
-            if total_cost > budget:
-                continue
-            
-            # Calculate what max load would be after adding j
-            approvers = [i for i in range(n) if votes[i, j] == 1]
-            if not approvers:
-                continue
-            
-            new_loads = loads.copy()
-            load_increase = costs[j] / len(approvers)
-            for i in approvers:
-                new_loads[i] += load_increase
-            
-            max_load = new_loads.max()
-            
-            if max_load < min_max_load:
-                min_max_load = max_load
-                best_j = j
-        
-        if best_j is None:
-            break
-        
-        # Add alternative and update loads
-        approvers = [i for i in range(n) if votes[i, best_j] == 1]
-        load_increase = costs[best_j] / len(approvers)
-        for i in approvers:
-            loads[i] += load_increase
-        
-        winning_set.add(best_j)
-        remaining.remove(best_j)
-    
-    return winning_set
 
 
 # ============================================================================
@@ -428,8 +552,8 @@ def generate_instance(n: int, m: int, alpha: float, budget: float,
     for j in range(m):
         for q in range(min_qual, max_qual + 1):
             # Higher quality -> higher signal probability
-            base_prob = 0.5 + 0.3 * (q - min_qual) / (max_qual - min_qual) if max_qual > min_qual else 0.6
-            signal_dists[(j, q)] = np.random.uniform(base_prob - 0.2, base_prob + 0.2)
+            base_prob = 0.2 + 0.6 * (q - min_qual) / (max_qual - min_qual) if max_qual > min_qual else 0.6
+            signal_dists[(j, q)] = np.random.uniform(base_prob - (0.3 / max_qual), base_prob + (0.3 / max_qual))
             signal_dists[(j, q)] = np.clip(signal_dists[(j, q)], 0.1, 0.9)
     
     # Generate signals for each agent
@@ -550,8 +674,10 @@ def run_simulation(n_values: List[int], m: int, alpha: float, budget: float,
     
     voting_rules = {
         'AV': approval_voting,
-        'GC': greedy_cover,
-        'MES': method_of_equal_shares,
+        'AV/Cost': approval_voting_per_cost,
+        # 'GC': greedy_cover,  # Commented out - use GC+AV instead
+        'GC+AV': gc_plus_av,
+        # 'MES': method_of_equal_shares,  # Commented out - use MES+AV instead
         'MES+AV': mes_plus_av,
         'Phragmen': phragmen
     }
@@ -561,7 +687,7 @@ def run_simulation(n_values: List[int], m: int, alpha: float, budget: float,
         voting_rules['PAV'] = proportional_approval_voting
     
     results = {
-        rule: {'mean': [], 'std': []}
+        rule: {'mean': [], 'std': [], 'all': []}  # Added 'all' to store trial data
         for rule in voting_rules.keys()
     }
     
@@ -582,30 +708,32 @@ def run_simulation(n_values: List[int], m: int, alpha: float, budget: float,
                     print(f"  Error in {rule_name}: {e}")
                     rule_ratios[rule_name].append(0.0)
         
-        # Calculate mean and std over trials
+        # Calculate mean and std over trials, and store all trial data
         for rule_name in voting_rules.keys():
             ratios = rule_ratios[rule_name]
             results[rule_name]['mean'].append(np.mean(ratios))
             results[rule_name]['std'].append(np.std(ratios))
+            results[rule_name]['all'].append(ratios.copy())  # Store all trial data
             print(f"  {rule_name}: {np.mean(ratios):.4f} ± {np.std(ratios):.4f}")
     
-    return results
+    return results, voting_rules.keys()  # Also return rule names
 
 
-def plot_results(n_values: List[int], results: dict, title: str = "Performance vs Number of Agents", filename: str = None):
+def plot_results(n_values: List[int], results: dict, title: str = "Performance vs Number of Agents", filename: str = None, show_std_bars = False):
     """Plot performance with error bars for different voting rules."""
     import os
     
-    # Control flag: Set to True to show STD bars, False to show only means
-    # SHOW_STD_BARS = True   # Uncomment this line to enable STD bars
-    SHOW_STD_BARS = False    # Comment out this line to disable STD bars
+
+    SHOW_STD_BARS = show_std_bars
     
     plt.figure(figsize=(12, 8))
     
     # Define colors, markers, and linestyles for each rule
     rule_styles = {
         'AV': {'color': '#1f77b4', 'marker': 'o', 'linestyle': '-', 'markersize': 8},
+        'AV/Cost': {'color': '#17becf', 'marker': 'H', 'linestyle': '-', 'markersize': 9},
         'GC': {'color': '#ff7f0e', 'marker': 's', 'linestyle': '--', 'markersize': 8},
+        'GC+AV': {'color': '#e377c2', 'marker': '*', 'linestyle': '--', 'markersize': 10},
         'MES': {'color': '#2ca02c', 'marker': '^', 'linestyle': '-.', 'markersize': 8},
         'MES+AV': {'color': '#d62728', 'marker': 'v', 'linestyle': ':', 'markersize': 8},
         'Phragmen': {'color': '#9467bd', 'marker': 'D', 'linestyle': '-', 'markersize': 8},
@@ -618,11 +746,16 @@ def plot_results(n_values: List[int], results: dict, title: str = "Performance v
         style = rule_styles.get(rule_name, {'color': 'black', 'marker': 'o', 'linestyle': '-', 'markersize': 8})
         
         if SHOW_STD_BARS:
-            plt.errorbar(n_values, means, yerr=stds, 
-                        marker=style['marker'], linestyle=style['linestyle'],
-                        color=style['color'], label=rule_name, 
-                        linewidth=3, markersize=style['markersize'],
-                        capsize=5, capthick=2, elinewidth=2)
+            # Plot error bars first (transparent)
+            plt.errorbar(n_values, means, yerr=stds,
+                        linestyle='none', color=style['color'],
+                        capsize=5, capthick=1.5, elinewidth=1.5,
+                        alpha=0.4)
+            # Plot main line and markers on top (fully opaque)
+            plt.plot(n_values, means, 
+                    marker=style['marker'], linestyle=style['linestyle'],
+                    color=style['color'], label=rule_name, 
+                    linewidth=3, markersize=style['markersize'])
         else:
             plt.plot(n_values, means, 
                         marker=style['marker'], linestyle=style['linestyle'],
@@ -682,13 +815,19 @@ def plot_results(n_values: List[int], results: dict, title: str = "Performance v
 # ============================================================================
 
 if __name__ == "__main__":
+    # Import statistical analysis module
+    from statistical_analysis import (
+        run_pairwise_tests, print_statistical_results, 
+        print_win_matrix, print_effect_size_interpretation
+    )
+    
     # Simulation parameters
-    n_values = list(range(10, 201, 10))  # n=10 to n=200 in steps of 10
+    n_values = list(range(10, 101, 10))  # n=10 to n=200 in steps of 10
     m = 8  # number of alternatives
     alpha = 5.0  # cost ratio (max/min) - non-unit cost simulation
     budget = 8.0  # budget constraint
-    quality_range = (0, 1)  # binary qualities
-    utility_type = 'normal'  # or 'cost_proportional'
+    quality_range = (0, 2)  # binary qualities
+    utility_type = 'cost_proportional'  # or 'normal'
     
     print("=" * 60)
     print("Participatory Budgeting Simulation")
@@ -703,12 +842,18 @@ if __name__ == "__main__":
     print("=" * 60)
     
     # Run simulation for default parameters
-    results = run_simulation(n_values, m, alpha, budget, quality_range, 
-                           utility_type, num_samples=30, num_trials=5)
+    results, rule_names = run_simulation(n_values, m, alpha, budget, quality_range, 
+                           utility_type, num_samples=30, num_trials=100)
     
     # Plot results
     plot_results(n_values, results, 
-                title=f"Performance vs n (m={m}, α={alpha}, B={budget})")
+                title=f"Performance vs n (m={m}, α={alpha}, B={budget})",show_std_bars = True)
+    
+    # Statistical Analysis
+    test_results, win_counts = run_pairwise_tests(results, rule_names, n_values, x_label='n')
+    print_statistical_results(test_results, win_counts, rule_names, n_values, x_label='n')
+    print_win_matrix(win_counts, rule_names, n_values)
+    print_effect_size_interpretation()
     
     print("\nSimulation complete!")
 

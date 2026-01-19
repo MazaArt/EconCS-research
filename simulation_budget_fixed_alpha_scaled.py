@@ -6,14 +6,15 @@ with a fixed budget.
 """
 
 import sys
+sys.stdout.reconfigure(encoding='utf-8')
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, greedy_cover, method_of_equal_shares, mes_plus_av, phragmen,
-    proportional_approval_voting,
+    approval_voting, approval_voting_per_cost, greedy_cover, gc_plus_av,
+    method_of_equal_shares, mes_plus_av, phragmen, proportional_approval_voting,
     calculate_informed_ratio, generate_instance
 )
 
@@ -46,8 +47,10 @@ def run_alpha_scaled_analysis(n: int, m: int, base_budget: float,
     
     voting_rules = {
         'AV': approval_voting,
-        'GC': greedy_cover,
-        'MES': method_of_equal_shares,
+        'AV/Cost': approval_voting_per_cost,
+        # 'GC': greedy_cover,  # Commented out - use GC+AV instead
+        'GC+AV': gc_plus_av,
+        # 'MES': method_of_equal_shares,  # Commented out - use MES+AV instead
         'MES+AV': mes_plus_av,
         'Phragmen': phragmen
     }
@@ -57,7 +60,7 @@ def run_alpha_scaled_analysis(n: int, m: int, base_budget: float,
         voting_rules['PAV'] = proportional_approval_voting
     
     results = {
-        rule: {'mean': [], 'std': []}
+        rule: {'mean': [], 'std': [], 'all': []}  # Added 'all' to store trial data
         for rule in voting_rules.keys()
     }
     
@@ -67,7 +70,7 @@ def run_alpha_scaled_analysis(n: int, m: int, base_budget: float,
         # Scale budget by this ratio to keep constraint level consistent
         scaled_budget = base_budget * (1 + alpha) / 2.0
         
-        print(f"Running simulation for alpha={alpha} (budget={scaled_budget:.2f})...", end=' ', flush=True)
+        print(f"Running simulation for α={alpha} (budget={scaled_budget:.2f})...", end=' ', flush=True)
         rule_ratios = {rule: [] for rule in voting_rules.keys()}
         
         for trial in range(num_trials):
@@ -88,6 +91,7 @@ def run_alpha_scaled_analysis(n: int, m: int, base_budget: float,
             ratios = rule_ratios[rule_name]
             results[rule_name]['mean'].append(np.mean(ratios))
             results[rule_name]['std'].append(np.std(ratios))
+            results[rule_name]['all'].append(ratios.copy())  # Store all trial data
             print(f"{rule_name}: {np.mean(ratios):.4f}±{np.std(ratios):.4f}  ", end='', flush=True)
         print("done")
     
@@ -101,15 +105,17 @@ def plot_alpha_scaled(alpha_values: List[float], results: dict, rule_names: List
     import os
     
     # Control flag: Set to True to show STD bars, False to show only means
-    # SHOW_STD_BARS = True   # Uncomment this line to enable STD bars
-    SHOW_STD_BARS = False    # Comment out this line to disable STD bars
+    SHOW_STD_BARS = True   # Uncomment this line to enable STD bars
+    # SHOW_STD_BARS = False    # Comment out this line to disable STD bars
     
     plt.figure(figsize=(12, 8))
     
     # Define colors, markers, and linestyles for each rule
     rule_styles = {
         'AV': {'color': '#1f77b4', 'marker': 'o', 'linestyle': '-', 'markersize': 8},
+        'AV/Cost': {'color': '#17becf', 'marker': 'H', 'linestyle': '-', 'markersize': 9},
         'GC': {'color': '#ff7f0e', 'marker': 's', 'linestyle': '--', 'markersize': 8},
+        'GC+AV': {'color': '#e377c2', 'marker': '*', 'linestyle': '--', 'markersize': 10},
         'MES': {'color': '#2ca02c', 'marker': '^', 'linestyle': '-.', 'markersize': 8},
         'MES+AV': {'color': '#d62728', 'marker': 'v', 'linestyle': ':', 'markersize': 8},
         'Phragmen': {'color': '#9467bd', 'marker': 'D', 'linestyle': '-', 'markersize': 8},
@@ -122,11 +128,13 @@ def plot_alpha_scaled(alpha_values: List[float], results: dict, rule_names: List
         style = rule_styles.get(rule_name, {'color': 'black', 'marker': 'o', 'linestyle': '-', 'markersize': 8})
         
         if SHOW_STD_BARS:
-            plt.errorbar(alpha_values, means, yerr=stds,
+            container = plt.errorbar(alpha_values, means, yerr=stds,
                         marker=style['marker'], linestyle=style['linestyle'],
                         color=style['color'], label=rule_name,
                         linewidth=3, markersize=style['markersize'],
-                        capsize=5, capthick=2, elinewidth=2)
+                        capsize=5, capthick=1.5, elinewidth=1.5,
+                        alpha=0.4)  # Alpha for error bars
+            container[0].set_alpha(1.0)  # Make the main line fully opaque
         else:
             plt.plot(alpha_values, means,
                         marker=style['marker'], linestyle=style['linestyle'],
@@ -176,12 +184,18 @@ def plot_alpha_scaled(alpha_values: List[float], results: dict, rule_names: List
 # ============================================================================
 
 if __name__ == "__main__":
+    # Import statistical analysis module
+    from statistical_analysis import (
+        run_pairwise_tests, print_statistical_results, 
+        print_win_matrix, print_effect_size_interpretation
+    )
+    
     # Simulation parameters - Scaled budget with alpha
-    n = 200  # Fixed number of agents (upwards of 200)
+    n = 100  # Fixed number of agents (upwards of 200)
     m = 8  # number of alternatives
-    base_budget = 5.0  # Base budget (budget scales as base_B * (1+α)/2)
+    base_budget = 5.0  # Base budget (budget scales as base_B * (1+alpha)/2)
     alpha_values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]  # Alpha from 1 to 10
-    quality_range = (0, 1)  # binary qualities
+    quality_range = (0, 2)  # binary qualities
     utility_type = 'normal'  # or 'cost_proportional'
     
     print("=" * 60)
@@ -190,7 +204,7 @@ if __name__ == "__main__":
     print(f"Parameters:")
     print(f"  n (agents): {n} (fixed)")
     print(f"  m (alternatives): {m}")
-    print(f"  base budget: {base_budget} (budget scales as base_B * (1+α)/2)")
+    print(f"  base budget: {base_budget} (budget scales as base_B * (1+alpha)/2)")
     print(f"  alpha values: {alpha_values}")
     print(f"  quality range: {quality_range}")
     print(f"  utility type: {utility_type}")
@@ -199,10 +213,16 @@ if __name__ == "__main__":
     # Run simulation
     results, rule_names = run_alpha_scaled_analysis(
         n, m, base_budget, alpha_values, quality_range,
-        utility_type, num_samples=30, num_trials=5
+        utility_type, num_samples=30, num_trials=100
     )
     
     # Plot results
     plot_alpha_scaled(alpha_values, results, rule_names, n, m, base_budget, utility_type)
+    
+    # Statistical Analysis
+    test_results, win_counts = run_pairwise_tests(results, rule_names, alpha_values, x_label='alpha')
+    print_statistical_results(test_results, win_counts, rule_names, alpha_values, x_label='alpha')
+    print_win_matrix(win_counts, rule_names, alpha_values)
+    print_effect_size_interpretation()
     
     print("\nSimulation complete!")

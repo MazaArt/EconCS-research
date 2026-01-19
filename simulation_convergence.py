@@ -6,14 +6,15 @@ with confidence intervals and error bars.
 """
 
 import sys
+sys.stdout.reconfigure(encoding='utf-8')
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, greedy_cover, method_of_equal_shares, mes_plus_av, phragmen,
-    proportional_approval_voting,
+    approval_voting, approval_voting_per_cost, greedy_cover, gc_plus_av,
+    method_of_equal_shares, mes_plus_av, phragmen, proportional_approval_voting,
     calculate_informed_ratio, generate_instance
 )
 
@@ -42,8 +43,10 @@ def run_convergence_analysis(n_values: List[int], m: int, alpha: float,
     
     voting_rules = {
         'AV': approval_voting,
-        'GC': greedy_cover,
-        'MES': method_of_equal_shares,
+        'AV/Cost': approval_voting_per_cost,
+        # 'GC': greedy_cover,  # Commented out - use GC+AV instead
+        'GC+AV': gc_plus_av,
+        # 'MES': method_of_equal_shares,  # Commented out - use MES+AV instead
         'MES+AV': mes_plus_av,
         'Phragmen': phragmen
     }
@@ -121,10 +124,12 @@ def plot_convergence(n_values: List[int], results: dict, rule_names: List[str],
         stds = results[rule_name]['std']
         
         # Plot with error bars
-        ax.errorbar(n_values, means, yerr=stds,
+        container = ax.errorbar(n_values, means, yerr=stds,
                    marker='o', linestyle='-', label='Mean ± std',
                    linewidth=3, markersize=8,
-                   capsize=5, capthick=2, elinewidth=2)
+                   capsize=5, capthick=1.5, elinewidth=1.5,
+                   alpha=0.4)  # Alpha for error bars
+        container[0].set_alpha(1.0)  # Make the main line fully opaque
         
         if show_confidence and has_scipy and len(results[rule_name]['all'][0]) > 1:
             # Calculate confidence intervals using t-distribution
@@ -202,6 +207,12 @@ def plot_convergence(n_values: List[int], results: dict, rule_names: List[str],
 # ============================================================================
 
 if __name__ == "__main__":
+    # Import statistical analysis module
+    from statistical_analysis import (
+        run_pairwise_tests, print_statistical_results, 
+        print_win_matrix, print_effect_size_interpretation
+    )
+    
     # Simulation parameters
     # Convergence to 1.0 should only happen under alpha = 1 (unit cost)
     # Budget should be less than number of alternatives to observe convergence
@@ -209,7 +220,7 @@ if __name__ == "__main__":
     m = 8  # number of alternatives
     alpha = 1.0  # Unit cost - required for convergence to 1.0
     budget = 5.0  # Budget < m (8) - can't afford all alternatives
-    quality_range = (0, 1)  # binary qualities
+    quality_range = (0, 2)  # binary qualities
     utility_type = 'normal'  # or 'cost_proportional'
     
     print("=" * 60)
@@ -227,7 +238,7 @@ if __name__ == "__main__":
     # Run simulation for original n values
     results, rule_names = run_convergence_analysis(
         n_values, m, alpha, budget, quality_range,
-        utility_type, num_samples=30, num_trials=5  
+        utility_type, num_samples=30, num_trials=100  
     )
     
     # Plot results
@@ -239,6 +250,12 @@ if __name__ == "__main__":
         print("Warning: scipy not available, plotting without confidence intervals")
         plot_convergence(n_values, results, rule_names, m, alpha, budget, utility_type,
                         show_confidence=False, confidence_level=0.95)
+    
+    # Statistical Analysis
+    test_results, win_counts = run_pairwise_tests(results, rule_names, n_values, x_label='n')
+    print_statistical_results(test_results, win_counts, rule_names, n_values, x_label='n')
+    print_win_matrix(win_counts, rule_names, n_values)
+    print_effect_size_interpretation()
     
     print("\nSimulation complete!")
 

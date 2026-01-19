@@ -6,14 +6,15 @@ and cost-proportional utility functions.
 """
 
 import sys
+sys.stdout.reconfigure(encoding='utf-8')
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, greedy_cover, method_of_equal_shares, mes_plus_av, phragmen,
-    proportional_approval_voting,
+    approval_voting, approval_voting_per_cost, greedy_cover, gc_plus_av,
+    method_of_equal_shares, mes_plus_av, phragmen, proportional_approval_voting,
     calculate_informed_ratio, generate_instance
 )
 
@@ -40,8 +41,10 @@ def run_utility_comparison(n_values: List[int], m: int, alpha: float,
     
     voting_rules = {
         'AV': approval_voting,
-        'GC': greedy_cover,
-        'MES': method_of_equal_shares,
+        'AV/Cost': approval_voting_per_cost,
+        # 'GC': greedy_cover,  # Commented out - use GC+AV instead
+        'GC+AV': gc_plus_av,
+        # 'MES': method_of_equal_shares,  # Commented out - use MES+AV instead
         'MES+AV': mes_plus_av,
         'Phragmen': phragmen
     }
@@ -51,7 +54,7 @@ def run_utility_comparison(n_values: List[int], m: int, alpha: float,
         voting_rules['PAV'] = proportional_approval_voting
     
     results = {
-        util_type: {rule: {'mean': [], 'std': []} for rule in voting_rules.keys()}
+        util_type: {rule: {'mean': [], 'std': [], 'all': []} for rule in voting_rules.keys()}
         for util_type in utility_types
     }
     
@@ -83,6 +86,7 @@ def run_utility_comparison(n_values: List[int], m: int, alpha: float,
                 ratios = rule_ratios[rule_name]
                 results[utility_type][rule_name]['mean'].append(np.mean(ratios))
                 results[utility_type][rule_name]['std'].append(np.std(ratios))
+                results[utility_type][rule_name]['all'].append(ratios.copy())  # Store all trial data
             print("done")
     
     return results, voting_rules.keys()
@@ -120,10 +124,12 @@ def plot_utility_comparison(n_values: List[int], results: dict, rule_names: List
             linestyle = '-' if utility_type == 'normal' else '--'
             color = '#1f77b4' if utility_type == 'normal' else '#ff7f0e'
             if SHOW_STD_BARS:
-                ax.errorbar(n_values, means, yerr=stds,
+                container = ax.errorbar(n_values, means, yerr=stds,
                            marker=marker, linestyle=linestyle, color=color,
                            label=label, linewidth=3, markersize=8,
-                           capsize=5, capthick=2, elinewidth=2)
+                           capsize=5, capthick=1.5, elinewidth=1.5,
+                           alpha=0.4)  # Alpha for error bars
+                container[0].set_alpha(1.0)  # Make the main line fully opaque
             else:
                 ax.plot(n_values, means,
                            marker=marker, linestyle=linestyle, color=color,
@@ -176,6 +182,12 @@ def plot_utility_comparison(n_values: List[int], results: dict, rule_names: List
 # ============================================================================
 
 if __name__ == "__main__":
+    # Import statistical analysis module
+    from statistical_analysis import (
+        run_pairwise_tests, print_statistical_results, 
+        print_win_matrix, print_effect_size_interpretation
+    )
+    
     # Simulation parameters
     n_values = list(range(10, 201, 10))  # n=10 to n=200 in steps of 10
     m = 8  # number of alternatives
@@ -197,11 +209,22 @@ if __name__ == "__main__":
     # Run simulation for original n values
     results, rule_names = run_utility_comparison(
         n_values, m, alpha, budget, quality_range,
-        num_samples=30, num_trials=5
+        num_samples=30, num_trials=50
     )
     
     # Plot results
     plot_utility_comparison(n_values, results, rule_names, m, alpha, budget)
+    
+    # Statistical Analysis - for each utility type
+    for utility_type in ['normal', 'cost_proportional']:
+        print(f"\n{'#' * 80}")
+        print(f"# STATISTICAL ANALYSIS FOR {utility_type.upper()} UTILITY")
+        print(f"{'#' * 80}")
+        test_results, win_counts = run_pairwise_tests(results[utility_type], rule_names, n_values, x_label='n')
+        print_statistical_results(test_results, win_counts, rule_names, n_values, x_label='n')
+        print_win_matrix(win_counts, rule_names, n_values)
+    
+    print_effect_size_interpretation()
     
     print("\nSimulation complete!")
 

@@ -6,14 +6,16 @@ with a fixed cost ratio (alpha).
 """
 
 import sys
+sys.stdout.reconfigure(encoding='utf-8')
+
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Tuple
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, greedy_cover, method_of_equal_shares, mes_plus_av, phragmen,
-    proportional_approval_voting,
+    approval_voting, approval_voting_per_cost, greedy_cover, gc_plus_av,
+    method_of_equal_shares, mes_plus_av, phragmen, proportional_approval_voting,
     calculate_informed_ratio, generate_instance
 )
 
@@ -42,8 +44,10 @@ def run_budget_scaled_analysis(n: int, m: int, alpha: float,
     
     voting_rules = {
         'AV': approval_voting,
-        'GC': greedy_cover,
-        'MES': method_of_equal_shares,
+        'AV/Cost': approval_voting_per_cost,
+        # 'GC': greedy_cover,  # Commented out - use GC+AV instead
+        'GC+AV': gc_plus_av,
+        # 'MES': method_of_equal_shares,  # Commented out - use MES+AV instead
         'MES+AV': mes_plus_av,
         'Phragmen': phragmen
     }
@@ -53,7 +57,7 @@ def run_budget_scaled_analysis(n: int, m: int, alpha: float,
         voting_rules['PAV'] = proportional_approval_voting
     
     results = {
-        rule: {'mean': [], 'std': []}
+        rule: {'mean': [], 'std': [], 'all': []}  # Added 'all' to store trial data
         for rule in voting_rules.keys()
     }
     
@@ -79,6 +83,7 @@ def run_budget_scaled_analysis(n: int, m: int, alpha: float,
             ratios = rule_ratios[rule_name]
             results[rule_name]['mean'].append(np.mean(ratios))
             results[rule_name]['std'].append(np.std(ratios))
+            results[rule_name]['all'].append(ratios.copy())  # Store all trial data
             print(f"{rule_name}: {np.mean(ratios):.4f}±{np.std(ratios):.4f}  ", end='', flush=True)
         print("done")
     
@@ -92,15 +97,17 @@ def plot_budget_scaled(budget_values: List[float], results: dict, rule_names: Li
     import os
     
     # Control flag: Set to True to show STD bars, False to show only means
-    # SHOW_STD_BARS = True   # Uncomment this line to enable STD bars
-    SHOW_STD_BARS = False    # Comment out this line to disable STD bars
+    SHOW_STD_BARS = True   # Uncomment this line to enable STD bars
+    # SHOW_STD_BARS = False    # Comment out this line to disable STD bars
     
     plt.figure(figsize=(12, 8))
     
     # Define colors, markers, and linestyles for each rule
     rule_styles = {
         'AV': {'color': '#1f77b4', 'marker': 'o', 'linestyle': '-', 'markersize': 8},
+        'AV/Cost': {'color': '#17becf', 'marker': 'H', 'linestyle': '-', 'markersize': 9},
         'GC': {'color': '#ff7f0e', 'marker': 's', 'linestyle': '--', 'markersize': 8},
+        'GC+AV': {'color': '#e377c2', 'marker': '*', 'linestyle': '--', 'markersize': 10},
         'MES': {'color': '#2ca02c', 'marker': '^', 'linestyle': '-.', 'markersize': 8},
         'MES+AV': {'color': '#d62728', 'marker': 'v', 'linestyle': ':', 'markersize': 8},
         'Phragmen': {'color': '#9467bd', 'marker': 'D', 'linestyle': '-', 'markersize': 8},
@@ -113,11 +120,13 @@ def plot_budget_scaled(budget_values: List[float], results: dict, rule_names: Li
         style = rule_styles.get(rule_name, {'color': 'black', 'marker': 'o', 'linestyle': '-', 'markersize': 8})
         
         if SHOW_STD_BARS:
-            plt.errorbar(budget_values, means, yerr=stds,
+            container = plt.errorbar(budget_values, means, yerr=stds,
                         marker=style['marker'], linestyle=style['linestyle'],
                         color=style['color'], label=rule_name,
                         linewidth=3, markersize=style['markersize'],
-                        capsize=5, capthick=2, elinewidth=2)
+                        capsize=5, capthick=1.5, elinewidth=1.5,
+                        alpha=0.4)  # Alpha for error bars
+            container[0].set_alpha(1.0)  # Make the main line fully opaque
         else:
             plt.plot(budget_values, means,
                         marker=style['marker'], linestyle=style['linestyle'],
@@ -166,12 +175,18 @@ def plot_budget_scaled(budget_values: List[float], results: dict, rule_names: Li
 # ============================================================================
 
 if __name__ == "__main__":
+    # Import statistical analysis module
+    from statistical_analysis import (
+        run_pairwise_tests, print_statistical_results, 
+        print_win_matrix, print_effect_size_interpretation
+    )
+    
     # Simulation parameters
-    n = 200  # Fixed number of agents (upwards of 200)
+    n = 100  # Fixed number of agents (upwards of 200)
     m = 8  # number of alternatives
     alpha = 5.0  # Fixed cost ratio - non-unit cost simulation
     budget_values = [5.0, 10.0, 15.0, 20.0, 25.0, 30.0]  # Budget values
-    quality_range = (0, 1)  # binary qualities
+    quality_range = (0, 2)  # binary qualities
     utility_type = 'normal'  # or 'cost_proportional'
     
     print("=" * 60)
@@ -189,10 +204,16 @@ if __name__ == "__main__":
     # Run simulation
     results, rule_names = run_budget_scaled_analysis(
         n, m, alpha, budget_values, quality_range,
-        utility_type, num_samples=30, num_trials=5
+        utility_type, num_samples=30, num_trials=100
     )
     
     # Plot results
     plot_budget_scaled(budget_values, results, rule_names, n, m, alpha, utility_type)
+    
+    # Statistical Analysis
+    test_results, win_counts = run_pairwise_tests(results, rule_names, budget_values, x_label='B')
+    print_statistical_results(test_results, win_counts, rule_names, budget_values, x_label='B')
+    print_win_matrix(win_counts, rule_names, budget_values)
+    print_effect_size_interpretation()
     
     print("\nSimulation complete!")
