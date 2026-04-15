@@ -461,7 +461,7 @@ def knapsack_optimal(qualities: np.ndarray, costs: np.ndarray, budget: float,
     m = len(costs)
     
     # For small instances, use exhaustive search
-    if m <= 20:
+    if m <= 16:
         best_utility = -np.inf
         best_set = set()
         
