@@ -13,8 +13,11 @@ from typing import Dict, List, Tuple
 from simulation import (
     approval_voting,
     approval_voting_per_cost,
+    greedy_cover,
     gc_plus_av,
+    method_of_equal_shares,
     mes_plus_av,
+    mes_plus_phragmen,
     phragmen,
     proportional_approval_voting,
     calculate_informed_ratio,
@@ -27,8 +30,11 @@ def _voting_rules(m: int):
     rules = {
         "AV": approval_voting,
         "AV/Cost": approval_voting_per_cost,
+        "GC": greedy_cover,
         "GC+AV": gc_plus_av,
+        "MES": method_of_equal_shares,
         "MES+AV": mes_plus_av,
+        "MES+Phragmen": mes_plus_phragmen,
         "Phragmen": phragmen,
     }
     if m <= 12:
@@ -53,6 +59,7 @@ def define_experiments() -> Dict[str, dict]:
                     "label": "c",
                     "alpha": None,
                     "budget": 1_060_000.0,
+                    "fixed_cost_scale": 1000.0,
                     "fixed_costs": [
                         250000.0, 75000.0, 150000.0, 250000.0, 75000.0,
                         60000.0, 200000.0, 350000.0, 150000.0, 200000.0,
@@ -67,7 +74,7 @@ def define_experiments() -> Dict[str, dict]:
             "n": 100,
             "m": 8,
             "alpha": 20.0,
-            "budget_values": [10.0, 20.0, 30.0, 40.0, 50.0],
+            "budget_values": [20.0, 30.0, 40.0, 50.0],
             "quality_range": (0, 2),
             "utility_type": "normal",
         },
@@ -93,8 +100,8 @@ def define_experiments() -> Dict[str, dict]:
         "signal_type_case": {
             "n": 100,
             "m": 8,
-            "alpha": 10.0,
-            "budget": 14.0,
+            "alpha": 5.0,
+            "budget": 8.0,
             "num_types_values": [1, 2, 3, 4, 5],
             "quality_range": (0, 2),
             "utility_type": "normal",
@@ -117,8 +124,8 @@ def _run_single_instance(instance: dict, utility_type: str, num_samples: int, m:
     rules = _voting_rules(m)
     row = {}
     for name, func in rules.items():
-        if "reject_masks" in instance:
-            row[name] = _calculate_informed_ratio_with_reject_masks(
+        if "agent_types" in instance and "type_signal_dists" in instance:
+            row[name] = _calculate_informed_ratio_with_type_signal_dists(
                 instance=instance,
                 voting_rule=func,
                 use_cost_proportional=use_cost_proportional,
@@ -134,17 +141,18 @@ def _run_single_instance(instance: dict, utility_type: str, num_samples: int, m:
     return row
 
 
-def _calculate_informed_ratio_with_reject_masks(
+def _calculate_informed_ratio_with_type_signal_dists(
     instance: dict,
     voting_rule,
     use_cost_proportional: bool = False,
     num_samples: int = 100,
 ) -> float:
     """
-    Calculate informed ratio with type-based reject masks.
+    Calculate informed ratio with type-dependent signal distributions.
 
-    Signal generation remains shared across agents via common signal distributions.
-    If reject_masks[i, j] is True, agent i rejects project j regardless of signal.
+    All types share the same feasible set (all projects), but each type receives
+    systematically different signal probabilities for the same project-quality
+    pair.
     """
     n = instance["n"]
     m = instance["m"]
@@ -153,7 +161,8 @@ def _calculate_informed_ratio_with_reject_masks(
     qual_priors = instance["qual_priors"]
     signal_dists = instance["signal_dists"]
     quality_range = instance["quality_range"]
-    reject_masks = instance["reject_masks"]
+    agent_types = instance["agent_types"]
+    type_signal_dists = instance["type_signal_dists"]
     min_qual, max_qual = quality_range
 
     total_voting_utility = 0.0
@@ -166,10 +175,12 @@ def _calculate_informed_ratio_with_reject_masks(
 
         votes = np.zeros((n, m), dtype=int)
         for i in range(n):
+            t = int(agent_types[i])
             for j in range(m):
-                signal_prob = signal_dists[(j, qualities[j])]
-                signal_value = 1 if np.random.random() < signal_prob else 0
-                votes[i, j] = 0 if reject_masks[i, j] else signal_value
+                signal_prob = type_signal_dists[(t, j, qualities[j])]
+                if (j, qualities[j]) not in signal_dists:
+                    signal_prob = signal_dists[(j, qualities[j])]
+                votes[i, j] = 1 if np.random.random() < signal_prob else 0
 
         winning_set = voting_rule(votes, costs, budget)
 
@@ -185,25 +196,30 @@ def _calculate_informed_ratio_with_reject_masks(
     return total_voting_utility / total_optimal_utility if total_optimal_utility > 0 else 0.0
 
 
-def _build_signal_type_masks(n: int, m: int, num_types: int, rng: np.random.Generator) -> np.ndarray:
+def _build_type_signal_dists(
+    signal_dists: dict,
+    m: int,
+    quality_range: Tuple[int, int],
+    num_types: int,
+    rng: np.random.Generator,
+) -> dict:
     """
-    Build reject masks for each agent type.
+    Build type-specific signal distributions over a shared feasible set.
 
-    Each type receives a reject set R_t and feasible set F_t where:
-    - R_t union F_t = all projects
-    - R_t intersection F_t = empty
+    For each type and each project-quality pair, perturb the baseline signal
+    probability and clamp to [0.05, 0.95] to keep signals informative.
     """
-    type_masks = np.zeros((num_types, m), dtype=bool)
+    min_q, max_q = quality_range
+    type_signal_dists = {}
     for t in range(num_types):
-        reject_prob = rng.uniform(0.2, 0.6)
-        type_masks[t] = rng.random(m) < reject_prob
-        # Keep non-degenerate partitions.
-        if type_masks[t].all():
-            type_masks[t, rng.integers(0, m)] = False
-        if (~type_masks[t]).all():
-            type_masks[t, rng.integers(0, m)] = True
-    agent_types = rng.integers(0, num_types, size=n)
-    return type_masks[agent_types]
+        type_shift = rng.uniform(-0.15, 0.15)
+        for j in range(m):
+            project_shift = rng.uniform(-0.10, 0.10)
+            for q in range(min_q, max_q + 1):
+                base = signal_dists[(j, q)]
+                p = np.clip(base + type_shift + project_shift, 0.05, 0.95)
+                type_signal_dists[(t, j, q)] = float(p)
+    return type_signal_dists
 
 
 def _generate_instance_with_signal_types(
@@ -216,11 +232,10 @@ def _generate_instance_with_signal_types(
     seed: int,
 ) -> dict:
     """
-    Generate an instance and apply signal-type reject behavior.
+    Generate an instance with type-specific signal distributions.
 
-    All agents share the same signal model. Agents of a given type still receive
-    positive signals, but approvals are forced to 0 for projects in their reject
-    set R.
+    All types have the same feasible set (all projects). The only heterogeneity
+    is in how informative/noisy their signals are.
     """
     rng = np.random.default_rng(seed)
     instance = generate_instance(
@@ -231,11 +246,16 @@ def _generate_instance_with_signal_types(
         quality_range=quality_range,
         seed=seed,
     )
-    reject_masks = _build_signal_type_masks(n=n, m=m, num_types=num_types, rng=rng)
-    adjusted_signals = instance["signals"].copy()
-    adjusted_signals[reject_masks] = 0
-    instance["signals"] = adjusted_signals
-    instance["reject_masks"] = reject_masks
+    agent_types = rng.integers(0, num_types, size=n)
+    type_signal_dists = _build_type_signal_dists(
+        signal_dists=instance["signal_dists"],
+        m=m,
+        quality_range=quality_range,
+        num_types=num_types,
+        rng=rng,
+    )
+    instance["agent_types"] = agent_types
+    instance["type_signal_dists"] = type_signal_dists
     instance["num_types"] = num_types
     return instance
 
@@ -243,8 +263,8 @@ def _generate_instance_with_signal_types(
 def run_signal_type_case(
     n: int = 100,
     m: int = 8,
-    alpha: float = 10.0,
-    budget: float = 14.0,
+    alpha: float = 5.0,
+    budget: float = 8.0,
     num_types_values: List[int] | None = None,
     quality_range: Tuple[int, int] = (0, 2),
     utility_type: str = "normal",
@@ -289,6 +309,7 @@ def run_base_case_n_scaling(
     alpha: float | None,
     budget: float,
     fixed_costs: List[float] | None = None,
+    fixed_cost_scale: float | None = None,
     quality_range: Tuple[int, int] = (0, 2),
     utility_type: str = "normal",
     num_samples: int = 30,
@@ -301,10 +322,22 @@ def run_base_case_n_scaling(
         rules = _voting_rules(m_effective)
         per_rule = {name: [] for name in rules}
         for trial in range(num_trials):
-            alpha_for_generation = alpha if alpha is not None else float(max(fixed_costs))
-            instance = generate_instance(n, m_effective, alpha_for_generation, budget, quality_range, seed=trial)
+            scale = (
+                float(fixed_cost_scale)
+                if (fixed_costs is not None and fixed_cost_scale is not None and fixed_cost_scale > 0)
+                else 1.0
+            )
+            alpha_for_generation = (
+                alpha
+                if alpha is not None
+                else float(max(fixed_costs)) / scale
+            )
+            effective_budget = budget / scale
+            instance = generate_instance(
+                n, m_effective, alpha_for_generation, effective_budget, quality_range, seed=trial
+            )
             if fixed_costs is not None:
-                instance["costs"] = np.array(fixed_costs, dtype=float)
+                instance["costs"] = np.array(fixed_costs, dtype=float) / scale
                 instance["m"] = m_effective
             row = _run_single_instance(instance, utility_type, num_samples, m_effective)
             for rule_name, value in row.items():

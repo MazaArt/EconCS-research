@@ -14,7 +14,9 @@ from scipy import stats
 
 # Import functions from the main simulation module
 from simulation import (
-    greedy_cover, approval_voting,
+    approval_voting, approval_voting_per_cost, greedy_cover, gc_plus_av,
+    method_of_equal_shares, mes_plus_av, mes_plus_phragmen, phragmen,
+    proportional_approval_voting,
     calculate_informed_ratio, generate_instance
 )
 
@@ -24,7 +26,7 @@ def run_gc_convergence_analysis(n_values: List[int], m: int, alpha: float,
                                    utility_type: str = 'normal',
                                    num_samples: int = 50, num_trials: int = 10) -> dict:
     """
-    Run convergence analysis specifically for GC and AV.
+    Run convergence analysis across PB aggregation methods.
     
     Args:
         n_values: list of n (number of agents) to test
@@ -42,9 +44,17 @@ def run_gc_convergence_analysis(n_values: List[int], m: int, alpha: float,
     use_cost_proportional = (utility_type == 'cost_proportional')
     
     voting_rules = {
+        'AV': approval_voting,
+        'AV/Cost': approval_voting_per_cost,
         'GC': greedy_cover,
-        'AV': approval_voting
+        'GC+AV': gc_plus_av,
+        'MES': method_of_equal_shares,
+        'MES+AV': mes_plus_av,
+        'MES+Phragmen': mes_plus_phragmen,
+        'Phragmen': phragmen
     }
+    if m <= 12:
+        voting_rules['PAV'] = proportional_approval_voting
     
     results = {
         rule: {
@@ -79,7 +89,8 @@ def run_gc_convergence_analysis(n_values: List[int], m: int, alpha: float,
             results[rule_name]['std'].append(np.std(ratios))
             results[rule_name]['all'].append(ratios)
         
-        print(f"GC={results['GC']['mean'][-1]:.4f}, AV={results['AV']['mean'][-1]:.4f}")
+        summary = ", ".join(f"{rule}={results[rule]['mean'][-1]:.4f}" for rule in voting_rules.keys())
+        print(summary)
     
     return results, voting_rules.keys()
 

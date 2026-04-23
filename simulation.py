@@ -552,7 +552,13 @@ def knapsack_optimal(qualities: np.ndarray, costs: np.ndarray, budget: float,
     """
     m = len(costs)
     
-    # For small instances, use exhaustive search
+    # DP is much faster than exhaustive search for medium-size bounded budgets
+    # (e.g., Case 5 with m up to 20 and budget up to 40).
+    scaled_budget = int(round(float(budget) * 100))
+    if 0 <= scaled_budget <= 200_000:
+        return _knapsack_optimal_dp(qualities, costs, budget, use_cost_proportional)
+
+    # For small instances with very large budgets, use exhaustive search
     if m <= 20:
         best_utility = -np.inf
         best_set = set()
@@ -602,6 +608,60 @@ def knapsack_optimal(qualities: np.ndarray, costs: np.ndarray, budget: float,
             utility = sum(qualities[j] for j in winning_set)
         
         return winning_set, utility
+
+
+def _knapsack_optimal_dp(
+    qualities: np.ndarray,
+    costs: np.ndarray,
+    budget: float,
+    use_cost_proportional: bool = False,
+) -> Tuple[Set[int], float]:
+    """
+    0/1 knapsack DP with cent-level scaling for float costs.
+    """
+    m = len(costs)
+    scale = 100
+    int_costs = np.array([max(0, int(round(float(c) * scale))) for c in costs], dtype=int)
+    cap = max(0, int(round(float(budget) * scale)))
+
+    values = np.array(
+        [float(costs[j] * qualities[j]) if use_cost_proportional else float(qualities[j]) for j in range(m)],
+        dtype=float,
+    )
+
+    dp = np.full((m + 1, cap + 1), -np.inf)
+    take = np.zeros((m + 1, cap + 1), dtype=bool)
+    dp[0, :] = 0.0
+
+    for i in range(1, m + 1):
+        c = int_costs[i - 1]
+        v = values[i - 1]
+        for b in range(cap + 1):
+            best = dp[i - 1, b]
+            choose = False
+            if c <= b and dp[i - 1, b - c] > -np.inf:
+                alt = dp[i - 1, b - c] + v
+                if alt > best:
+                    best = alt
+                    choose = True
+            dp[i, b] = best
+            take[i, b] = choose
+
+    best_b = int(np.argmax(dp[m, :]))
+    best_value = float(dp[m, best_b])
+
+    chosen = set()
+    b = best_b
+    for i in range(m, 0, -1):
+        if take[i, b]:
+            j = i - 1
+            chosen.add(j)
+            b -= int_costs[j]
+
+    if best_value < 0:
+        best_value = 0.0
+        chosen = set()
+    return chosen, best_value
 
 
 # ============================================================================
@@ -776,6 +836,7 @@ def run_simulation(n_values: List[int], m: int, alpha: float, budget: float,
         'AV': approval_voting,
         'AV/Cost': approval_voting_per_cost,
         'GC': greedy_cover,
+        'GC+AV': gc_plus_av,
         'MES': method_of_equal_shares,
         'MES+AV': mes_plus_av,
         'MES+Phragmen': mes_plus_phragmen,

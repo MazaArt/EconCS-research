@@ -25,8 +25,8 @@ from experiment_suite import (
 
 OUTPUT_DIR = "plots/requested_experiments"
 CASE_1C_N_VALUES = list(range(10, 201, 10))
-CASE_1C_NUM_SAMPLES = 8
-CASE_1C_NUM_TRIALS = 4
+CASE_1C_NUM_SAMPLES = 4
+CASE_1C_NUM_TRIALS = 2
 VALID_EXPERIMENT_IDS = {"1a", "1b", "1c", "2", "3a", "3b", "4", "5"}
 
 
@@ -67,7 +67,76 @@ def _plot_curve(
     plt.close()
 
 
-def run_all(num_samples: int = 20, num_trials: int = 10) -> None:
+def _plot_case_3a_rule_panels(
+    alpha_values: List[float],
+    mean_by_rule: Dict[str, List[float]],
+    std_by_rule: Dict[str, List[float]],
+    budget: float,
+    filename: str,
+) -> None:
+    """
+    Plot Case 3a as rule-wise panels (similar style to unit-vs-general figure).
+    """
+    rules = list(mean_by_rule.keys())
+    n_plots = len(rules)
+    n_cols = 2
+    n_rows = (n_plots + n_cols - 1) // n_cols
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(16, 6 * n_rows))
+    if n_plots == 1:
+        axes = [axes]
+    elif n_rows == 1:
+        axes = axes.reshape(1, -1)
+    axes = axes.flatten()
+
+    for idx, rule in enumerate(rules):
+        ax = axes[idx]
+        means = mean_by_rule[rule]
+        stds = std_by_rule[rule]
+        ax.errorbar(
+            alpha_values,
+            means,
+            yerr=stds,
+            marker="o",
+            linewidth=3,
+            markersize=8,
+            capsize=5,
+            capthick=1.5,
+            elinewidth=1.5,
+            alpha=0.4,
+            color="#1f77b4",
+            label=rule,
+        )
+        ax.lines[-1].set_alpha(1.0)
+        ax.axhline(y=1.0, color="red", linestyle="--", alpha=0.5, linewidth=2)
+        ax.set_xlabel("Alpha", fontsize=20)
+        ax.set_ylabel("Performance", fontsize=20)
+        ax.set_title(rule, fontsize=22, fontweight="bold")
+        ax.grid(True, alpha=0.3)
+        ax.legend(fontsize=14, loc="best")
+        all_vals = means + [1.0]
+        y_min = max(0.0, min(all_vals) - 0.05)
+        y_max = min(1.05, max(all_vals) + 0.05)
+        if y_min >= y_max:
+            y_min = max(0.0, y_max - 0.1)
+        ax.set_ylim([y_min, y_max])
+        ax.tick_params(labelsize=14)
+
+    for idx in range(n_plots, len(axes)):
+        axes[idx].axis("off")
+
+    plt.suptitle(
+        f"Case 3a: Rule-wise Performance vs Alpha (fixed budget={budget})",
+        fontsize=26,
+        fontweight="bold",
+        y=0.995,
+    )
+    plt.tight_layout(rect=[0, 0, 1, 0.98])
+    plt.savefig(os.path.join(OUTPUT_DIR, filename), dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
     cfg = define_experiments()
     _ensure_output_dir()
 
@@ -89,6 +158,7 @@ def run_all(num_samples: int = 20, num_trials: int = 10) -> None:
             alpha=alpha,
             budget=budget,
             fixed_costs=setting.get("fixed_costs"),
+            fixed_cost_scale=setting.get("fixed_cost_scale"),
             quality_range=base["quality_range"],
             utility_type=base["utility_type"],
             num_samples=case_num_samples,
@@ -256,8 +326,7 @@ def run_all(num_samples: int = 20, num_trials: int = 10) -> None:
     # 5) Alpha constant, m and budget increase
     mcfg = cfg["alpha_constant_m_budget_increase"]
     print("[Case 5] Alpha constant with increasing m and budget")
-    # Run only one alpha first to reduce runtime.
-    for alpha in [mcfg["alpha_values"][0]]:
+    for alpha in mcfg["alpha_values"]:
         raw_nested = run_alpha_constant_m_budget_increase_case(
             n=mcfg["n"],
             alpha_values=[alpha],
@@ -313,7 +382,7 @@ def _parse_experiment_selection(argv: List[str]) -> set[str]:
     return selected
 
 
-def run_selected(experiment_ids: set[str], num_samples: int = 20, num_trials: int = 10) -> None:
+def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: int = 5) -> None:
     """Run only selected experiments and save plots."""
     cfg = define_experiments()
     _ensure_output_dir()
@@ -340,6 +409,7 @@ def run_selected(experiment_ids: set[str], num_samples: int = 20, num_trials: in
                 alpha=alpha,
                 budget=budget,
                 fixed_costs=setting.get("fixed_costs"),
+                fixed_cost_scale=setting.get("fixed_cost_scale"),
                 quality_range=base["quality_range"],
                 utility_type=base["utility_type"],
                 num_samples=case_num_samples,
@@ -512,8 +582,7 @@ def run_selected(experiment_ids: set[str], num_samples: int = 20, num_trials: in
     if "5" in experiment_ids:
         mcfg = cfg["alpha_constant_m_budget_increase"]
         print("[Case 5] Alpha constant with increasing m and budget")
-        # Run only one alpha first to reduce runtime.
-        for alpha in [mcfg["alpha_values"][0]]:
+        for alpha in mcfg["alpha_values"]:
             raw_nested = run_alpha_constant_m_budget_increase_case(
                 n=mcfg["n"],
                 alpha_values=[alpha],
@@ -555,4 +624,4 @@ if __name__ == "__main__":
     except ValueError as exc:
         print(str(exc))
         sys.exit(1)
-    run_selected(selected, num_samples=20, num_trials=10)
+    run_selected(selected, num_samples=10, num_trials=5)
