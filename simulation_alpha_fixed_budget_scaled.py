@@ -14,9 +14,9 @@ from typing import List, Tuple
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, approval_voting_per_cost, greedy_cover, gc_plus_av,
-    method_of_equal_shares, mes_plus_av, phragmen, proportional_approval_voting,
-    calculate_informed_ratio, generate_instance
+    approval_voting, approval_voting_per_cost, greedy_cover,
+    method_of_equal_shares, mes_plus_av, mes_plus_phragmen, phragmen, 
+    proportional_approval_voting, calculate_informed_ratio, generate_instance
 )
 
 
@@ -45,10 +45,10 @@ def run_budget_scaled_analysis(n: int, m: int, alpha: float,
     voting_rules = {
         'AV': approval_voting,
         'AV/Cost': approval_voting_per_cost,
-        # 'GC': greedy_cover,  # Commented out - use GC+AV instead
-        'GC+AV': gc_plus_av,
-        # 'MES': method_of_equal_shares,  # Commented out - use MES+AV instead
+        'GC': greedy_cover,
+        'MES': method_of_equal_shares,
         'MES+AV': mes_plus_av,
+        'MES+Phragmen': mes_plus_phragmen,
         'Phragmen': phragmen
     }
     
@@ -99,7 +99,7 @@ def plot_budget_scaled(budget_values: List[float], results: dict, rule_names: Li
     # Control flag: Set to True to show STD bars, False to show only means
     SHOW_STD_BARS = True   # Uncomment this line to enable STD bars
     # SHOW_STD_BARS = False    # Comment out this line to disable STD bars
-    
+
     plt.figure(figsize=(12, 8))
     
     # Define colors, markers, and linestyles for each rule
@@ -110,6 +110,7 @@ def plot_budget_scaled(budget_values: List[float], results: dict, rule_names: Li
         'GC+AV': {'color': '#e377c2', 'marker': '*', 'linestyle': '--', 'markersize': 10},
         'MES': {'color': '#2ca02c', 'marker': '^', 'linestyle': '-.', 'markersize': 8},
         'MES+AV': {'color': '#d62728', 'marker': 'v', 'linestyle': ':', 'markersize': 8},
+        'MES+Phragmen': {'color': '#bcbd22', 'marker': 'P', 'linestyle': '-.', 'markersize': 9},
         'Phragmen': {'color': '#9467bd', 'marker': 'D', 'linestyle': '-', 'markersize': 8},
         'PAV': {'color': '#8c564b', 'marker': 'p', 'linestyle': '--', 'markersize': 8}
     }
@@ -187,7 +188,7 @@ if __name__ == "__main__":
     alpha = 5.0  # Fixed cost ratio - non-unit cost simulation
     budget_values = [5.0, 10.0, 15.0, 20.0, 25.0, 30.0]  # Budget values
     quality_range = (0, 2)  # binary qualities
-    utility_type = 'normal'  # or 'cost_proportional'
+    utility_type = 'cost_proportional'  # or 'normal'
     
     print("=" * 60)
     print("Fixed Alpha with Scaled Budget Simulation")
@@ -204,7 +205,7 @@ if __name__ == "__main__":
     # Run simulation
     results, rule_names = run_budget_scaled_analysis(
         n, m, alpha, budget_values, quality_range,
-        utility_type, num_samples=30, num_trials=100
+        utility_type, num_samples=100, num_trials=100
     )
     
     # Plot results

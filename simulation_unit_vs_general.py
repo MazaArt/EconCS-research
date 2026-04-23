@@ -13,9 +13,9 @@ from typing import List, Tuple
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, approval_voting_per_cost, greedy_cover, gc_plus_av,
-    method_of_equal_shares, mes_plus_av, phragmen, proportional_approval_voting,
-    calculate_informed_ratio, generate_instance
+    approval_voting, approval_voting_per_cost, greedy_cover,
+    method_of_equal_shares, mes_plus_av, mes_plus_phragmen, phragmen, 
+    proportional_approval_voting, calculate_informed_ratio, generate_instance
 )
 
 
@@ -44,10 +44,10 @@ def run_unit_vs_general_comparison(n_values: List[int], m: int, alpha_values: Li
     voting_rules = {
         'AV': approval_voting,
         'AV/Cost': approval_voting_per_cost,
-        # 'GC': greedy_cover,  # Commented out - use GC+AV instead
-        'GC+AV': gc_plus_av,
-        # 'MES': method_of_equal_shares,  # Commented out - use MES+AV instead
+        'GC': greedy_cover,
+        'MES': method_of_equal_shares,
         'MES+AV': mes_plus_av,
+        'MES+Phragmen': mes_plus_phragmen,
         'Phragmen': phragmen
     }
     
@@ -117,9 +117,9 @@ def plot_unit_vs_general(n_values: List[int], results: dict, rule_names: List[st
     # Define markers and linestyles for alpha values
     alpha_styles = {
         1.0: {'marker': 'o', 'linestyle': '-', 'color': '#1f77b4'},
-        2.0: {'marker': 's', 'linestyle': '--', 'color': '#ff7f0e'},
-        3.0: {'marker': '^', 'linestyle': '-.', 'color': '#2ca02c'},
-        5.0: {'marker': 'v', 'linestyle': ':', 'color': '#d62728'}
+        3.0: {'marker': 's', 'linestyle': '--', 'color': '#ff7f0e'},
+        5.0: {'marker': '^', 'linestyle': '-.', 'color': '#2ca02c'},
+        7.0: {'marker': 'v', 'linestyle': ':', 'color': '#d62728'}
     }
     
     for idx, rule_name in enumerate(rule_names):
@@ -201,10 +201,10 @@ if __name__ == "__main__":
     # Simulation parameters
     n_values = list(range(10, 101, 10))  # n=10 to n=200 in steps of 10
     m = 8  # number of alternatives
-    alpha_values = [1.0, 2.0, 3.0, 4.0, 5.0]  # 1.0 = unit cost, >1.0 = general cost
+    alpha_values = [1.0, 3.0, 5.0, 7.0]  # 1.0 = unit cost, >1.0 = general cost
     budget = 7.0
     quality_range = (0, 2)  # binary qualities
-    utility_type = 'normal'  # or 'cost_proportional'
+    utility_type = 'cost_proportional'  # or 'normal'
     
     print("=" * 60)
     print("Unit Cost vs General Cost Comparison Simulation")
@@ -221,7 +221,7 @@ if __name__ == "__main__":
     # Run simulation for original n values
     results, rule_names = run_unit_vs_general_comparison(
         n_values, m, alpha_values, budget, quality_range,
-        utility_type, num_samples=30, num_trials=100
+        utility_type, num_samples=100, num_trials=100
     )
     
     # Plot results

@@ -153,9 +153,14 @@ def proportional_approval_voting(votes: np.ndarray, costs: np.ndarray, budget: f
 
 def greedy_cover(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
     """
-    Greedy Cover: Iteratively select the alternative that covers the most uncovered agents.
+    Greedy Cover: Two-phase selection algorithm.
     
+    Phase 1: Iteratively select the alternative that covers the most uncovered agents.
     An agent is "covered" once at least one alternative they approve has been selected.
+    Tie-breaker: lexicographic (by index).
+    
+    Phase 2: Once all agents are covered, fill remaining budget lexicographically
+    (select affordable alternatives in index order).
     
     Args:
         votes: (n, m) binary array
@@ -171,38 +176,40 @@ def greedy_cover(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int
     covered = np.zeros(n, dtype=bool)  # Track covered agents
     remaining = set(range(m))
     
+    # Phase 1: Greedy cover - maximize new agents covered
     while remaining:
         best_j = None
         best_new_covered = -1
-        best_approval = -1
         
-        for j in remaining:
+        for j in sorted(remaining):  # Lexicographic tie-breaking
             if costs[j] > remaining_budget:
                 continue
             
             # Count how many NEW agents this alternative would cover
             approvers = votes[:, j] == 1
             new_covered = np.sum(approvers & ~covered)
-            approval_count = np.sum(approvers)
             
-            # Select alternative with most new coverage
-            # Break ties by approval count (higher is better), then by index (lower is better for determinism)
-            if (new_covered > best_new_covered or 
-                (new_covered == best_new_covered and approval_count > best_approval) or
-                (new_covered == best_new_covered and approval_count == best_approval and 
-                 (best_j is None or j < best_j))):
+            if new_covered > best_new_covered:
                 best_new_covered = new_covered
-                best_approval = approval_count
                 best_j = j
         
-        if best_j is None or best_new_covered == 0:
-            break
+        if best_j is None:
+            break  # No affordable alternatives left
+        
+        if best_new_covered == 0:
+            break  # All agents covered, move to Phase 2
         
         # Update covered agents
         covered |= (votes[:, best_j] == 1)
         winning_set.add(best_j)
         remaining_budget -= costs[best_j]
         remaining.remove(best_j)
+    
+    # Phase 2: Fill remaining budget lexicographically
+    for j in sorted(remaining):
+        if costs[j] <= remaining_budget:
+            winning_set.add(j)
+            remaining_budget -= costs[j]
     
     return winning_set
 
@@ -440,6 +447,91 @@ def mes_plus_av(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]
     return mes_winning_set
 
 
+def mes_plus_phragmen(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    Hybrid MES + Phragmen: First run MES, then use Phragmen to exhaust remaining budget.
+    
+    Args:
+        votes: (n, m) binary array, votes[i, j] = 1 if agent i approves alternative j
+        costs: (m,) array of costs
+        budget: budget constraint
+    
+    Returns:
+        Set of winning alternative indices
+    """
+    # First, run MES
+    mes_winning_set = method_of_equal_shares(votes, costs, budget)
+    
+    # Calculate remaining budget
+    used_budget = sum(costs[j] for j in mes_winning_set)
+    remaining_budget = budget - used_budget
+    
+    # If no remaining budget, return MES result
+    if remaining_budget <= 1e-9:
+        return mes_winning_set
+    
+    # Use Phragmen to fill remaining budget
+    n, m = votes.shape
+    
+    # Get alternatives not yet selected
+    remaining_alternatives = set(j for j in range(m) if j not in mes_winning_set)
+    
+    if not remaining_alternatives:
+        return mes_winning_set
+    
+    # Initialize loads for Phragmen (start fresh for the completion phase)
+    loads = np.zeros(n)
+    
+    while remaining_alternatives:
+        best_j = None
+        best_x = np.inf
+        
+        for j in remaining_alternatives:
+            if costs[j] > remaining_budget + 1e-9:
+                continue
+            
+            approvers = np.where(votes[:, j] == 1)[0]
+            if len(approvers) == 0:
+                continue
+            
+            # Find x using Phragmen logic
+            approver_loads = sorted([loads[i] for i in approvers])
+            num_approvers = len(approvers)
+            
+            x = None
+            current_sum_loads = 0.0
+            
+            for k in range(1, num_approvers + 1):
+                current_sum_loads += approver_loads[k-1]
+                proposed_x = (costs[j] + current_sum_loads) / k
+                
+                lower_bound = approver_loads[k-1]
+                upper_bound = approver_loads[k] if k < num_approvers else np.inf
+                
+                if proposed_x >= lower_bound - 1e-9 and proposed_x <= upper_bound + 1e-9:
+                    x = proposed_x
+                    break
+            
+            if x is not None and x < best_x:
+                best_x = x
+                best_j = j
+        
+        if best_j is None:
+            break
+        
+        # Update loads for approvers
+        approvers = np.where(votes[:, best_j] == 1)[0]
+        for i in approvers:
+            if loads[i] < best_x:
+                loads[i] = best_x
+        
+        mes_winning_set.add(best_j)
+        remaining_budget -= costs[best_j]
+        remaining_alternatives.remove(best_j)
+    
+    return mes_winning_set
+
+
 # ============================================================================
 # Knapsack Solver (Optimal Set)
 # ============================================================================
@@ -461,7 +553,7 @@ def knapsack_optimal(qualities: np.ndarray, costs: np.ndarray, budget: float,
     m = len(costs)
     
     # For small instances, use exhaustive search
-    if m <= 16:
+    if m <= 20:
         best_utility = -np.inf
         best_set = set()
         
@@ -683,10 +775,10 @@ def run_simulation(n_values: List[int], m: int, alpha: float, budget: float,
     voting_rules = {
         'AV': approval_voting,
         'AV/Cost': approval_voting_per_cost,
-        # 'GC': greedy_cover,  # Commented out - use GC+AV instead
-        'GC+AV': gc_plus_av,
-        # 'MES': method_of_equal_shares,  # Commented out - use MES+AV instead
+        'GC': greedy_cover,
+        'MES': method_of_equal_shares,
         'MES+AV': mes_plus_av,
+        'MES+Phragmen': mes_plus_phragmen,
         'Phragmen': phragmen
     }
     
@@ -734,7 +826,7 @@ def plot_results(n_values: List[int], results: dict, title: str = "Performance v
 
     SHOW_STD_BARS = show_std_bars
     
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(9, 6))
     
     # Define colors, markers, and linestyles for each rule
     rule_styles = {
@@ -744,6 +836,7 @@ def plot_results(n_values: List[int], results: dict, title: str = "Performance v
         'GC+AV': {'color': '#e377c2', 'marker': '*', 'linestyle': '--', 'markersize': 10},
         'MES': {'color': '#2ca02c', 'marker': '^', 'linestyle': '-.', 'markersize': 8},
         'MES+AV': {'color': '#d62728', 'marker': 'v', 'linestyle': ':', 'markersize': 8},
+        'MES+Phragmen': {'color': '#bcbd22', 'marker': 'P', 'linestyle': '-.', 'markersize': 9},
         'Phragmen': {'color': '#9467bd', 'marker': 'D', 'linestyle': '-', 'markersize': 8},
         'PAV': {'color': '#8c564b', 'marker': 'p', 'linestyle': '--', 'markersize': 8}
     }
@@ -757,26 +850,26 @@ def plot_results(n_values: List[int], results: dict, title: str = "Performance v
             # Plot error bars first (transparent)
             plt.errorbar(n_values, means, yerr=stds,
                         linestyle='none', color=style['color'],
-                        capsize=5, capthick=1.5, elinewidth=1.5,
+                        capsize=4, capthick=1.5, elinewidth=1.5,
                         alpha=0.4)
             # Plot main line and markers on top (fully opaque)
             plt.plot(n_values, means, 
                     marker=style['marker'], linestyle=style['linestyle'],
                     color=style['color'], label=rule_name, 
-                    linewidth=3, markersize=style['markersize'])
+                    linewidth=2.5, markersize=style['markersize'])
         else:
             plt.plot(n_values, means, 
                         marker=style['marker'], linestyle=style['linestyle'],
                         color=style['color'], label=rule_name, 
-                        linewidth=3, markersize=style['markersize'])
+                        linewidth=2.5, markersize=style['markersize'])
     
     # Add horizontal line at y=1 (perfect performance)
     plt.axhline(y=1.0, color='r', linestyle='--', alpha=0.5, linewidth=2, label='Perfect (Performance=1)')
     
-    plt.xlabel('Number of Agents (n)', fontsize=24)
-    plt.ylabel('Performance', fontsize=24)
-    plt.title(title, fontsize=28, fontweight='bold')
-    plt.legend(fontsize=20, loc='best')
+    plt.xlabel('Number of Agents (n)', fontsize=22)
+    plt.ylabel('Performance', fontsize=22)
+    # No title - keep plot clean and compact
+    plt.legend(fontsize=15, loc='lower right')
     plt.grid(True, alpha=0.3)
     
     # Adjust y-axis to use most of the visual space
@@ -786,25 +879,25 @@ def plot_results(n_values: List[int], results: dict, title: str = "Performance v
             all_stds = [s for r in results.values() for s in r['std']]
             if all_stds:
                 y_min = max(0.0, min(all_means) - 2 * max(all_stds))
-                y_max = min(1.05, max(all_means) + 2 * max(all_stds))
+                y_max = min(1.02, max(all_means) + 2 * max(all_stds))
             else:
                 y_min = max(0.0, min(all_means) - 0.05)
-                y_max = min(1.05, max(all_means) + 0.05)
+                y_max = min(1.02, max(all_means) + 0.05)
         else:
             y_min = max(0.0, min(all_means) - 0.05)
-            y_max = min(1.05, max(all_means) + 0.05)
+            y_max = min(1.02, max(all_means) + 0.05)
         # Ensure y_min is never negative
         y_min = max(0.0, y_min)
     else:
         y_min = 0.0
-        y_max = 1.05
+        y_max = 1.02
     # Ensure y_min < y_max to prevent axis inversion
     if y_min >= y_max:
         y_min = max(0.0, y_max - 0.1)
     plt.ylim([y_min, y_max])
     
-    plt.xticks(fontsize=20)
-    plt.yticks(fontsize=20)
+    plt.xticks(fontsize=14)
+    plt.yticks(fontsize=14)
     plt.tight_layout()
     if filename is None:
         from datetime import datetime
@@ -813,7 +906,7 @@ def plot_results(n_values: List[int], results: dict, title: str = "Performance v
     # Save to plots/simulation folder
     os.makedirs('plots/simulation', exist_ok=True)
     filepath = os.path.join('plots/simulation', filename)
-    plt.savefig(filepath, dpi=300)
+    plt.savefig(filepath, dpi=600, bbox_inches='tight')
     print(f"Plot saved as '{filepath}'")
     plt.show()
 
@@ -832,10 +925,10 @@ if __name__ == "__main__":
     # Simulation parameters
     n_values = list(range(10, 101, 10))  # n=10 to n=200 in steps of 10
     m = 8  # number of alternatives
-    alpha = 5.0  # cost ratio (max/min) - non-unit cost simulation
-    budget = 8.0  # budget constraint
+    alpha = 1.0  # cost ratio (max/min) - non-unit cost simulation
+    budget = 4.0  # budget constraint
     quality_range = (0, 2)  # binary qualities
-    utility_type = 'cost_proportional'  # or 'normal'
+    utility_type = 'normal'  # or 'cost_proportional'
     
     print("=" * 60)
     print("Participatory Budgeting Simulation")
@@ -851,7 +944,7 @@ if __name__ == "__main__":
     
     # Run simulation for default parameters
     results, rule_names = run_simulation(n_values, m, alpha, budget, quality_range, 
-                           utility_type, num_samples=30, num_trials=100)
+                           utility_type, num_samples=100, num_trials=100)
     
     # Plot results
     plot_results(n_values, results, 

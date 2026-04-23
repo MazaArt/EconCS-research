@@ -13,9 +13,9 @@ from typing import List, Tuple
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, approval_voting_per_cost, greedy_cover, gc_plus_av,
-    method_of_equal_shares, mes_plus_av, phragmen, proportional_approval_voting,
-    calculate_informed_ratio, generate_instance
+    approval_voting, approval_voting_per_cost, greedy_cover,
+    method_of_equal_shares, mes_plus_av, mes_plus_phragmen, phragmen, 
+    proportional_approval_voting, calculate_informed_ratio, generate_instance
 )
 
 
@@ -42,10 +42,10 @@ def run_utility_comparison(n_values: List[int], m: int, alpha: float,
     voting_rules = {
         'AV': approval_voting,
         'AV/Cost': approval_voting_per_cost,
-        # 'GC': greedy_cover,  # Commented out - use GC+AV instead
-        'GC+AV': gc_plus_av,
-        # 'MES': method_of_equal_shares,  # Commented out - use MES+AV instead
+        'GC': greedy_cover,
+        'MES': method_of_equal_shares,
         'MES+AV': mes_plus_av,
+        'MES+Phragmen': mes_plus_phragmen,
         'Phragmen': phragmen
     }
     

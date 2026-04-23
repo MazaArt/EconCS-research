@@ -1,0 +1,77 @@
+================================================================================
+GC (GREEDY COVER) CONVERGENCE ANALYSIS
+================================================================================
+Parameters:
+  n values: 1000 to 9000 (step=1000)
+  m (alternatives): 8
+  alpha (cost ratio): 1.0
+  budget: 4.0
+  quality range: (0, 2)
+  utility type: normal
+  epsilon (convergence threshold): 0.01
+================================================================================
+Running simulation for n=1000... GC=0.9569, AV=1.0000
+Running simulation for n=2000... GC=0.9821, AV=1.0000
+Running simulation for n=3000... GC=0.9918, AV=1.0000
+Running simulation for n=4000... GC=0.9958, AV=1.0000
+Running simulation for n=5000... GC=0.9971, AV=1.0000
+Running simulation for n=6000... GC=0.9980, AV=1.0000
+Running simulation for n=7000... GC=0.9990, AV=1.0000
+Running simulation for n=8000... GC=0.9990, AV=1.0000
+Running simulation for n=9000... GC=0.9994, AV=1.0000
+
+================================================================================
+CONVERGENCE HYPOTHESIS TESTING
+================================================================================
+Epsilon (equivalence margin): 0.01
+Alpha level: 0.05
+'Sufficiently close to 1' means: performance within [0.99, 1] = [0.990, 1.000]
+================================================================================
+
+────────────────────────────────────────
+Rule: GC
+────────────────────────────────────────
+
+       n |    Mean |            95% CI |   TOST p | Converged?
+  -------+---------+-------------------+----------+-----------
+    5000 |  0.9971 | [0.9962, 0.9980] |   0.0000 |      YES ✓
+    6000 |  0.9980 | [0.9973, 0.9987] |   0.0000 |      YES ✓
+    7000 |  0.9990 | [0.9985, 0.9994] |   0.0000 |      YES ✓
+    8000 |  0.9990 | [0.9987, 0.9994] |   0.0000 |      YES ✓
+    9000 |  0.9994 | [0.9991, 0.9998] |   0.0000 |      YES ✓
+
+  ✓ GC appears to CONVERGE to 1 (mean=0.9994 is within ε=0.01 of 1)
+
+────────────────────────────────────────
+Rule: AV
+────────────────────────────────────────
+
+       n |    Mean |            95% CI |   TOST p | Converged?
+  -------+---------+-------------------+----------+-----------
+    5000 |  1.0000 | [1.0000, 1.0000] |   0.0000 |      YES ✓
+    6000 |  1.0000 | [1.0000, 1.0000] |   0.0000 |      YES ✓
+    7000 |  1.0000 | [1.0000, 1.0000] |   0.0000 |      YES ✓
+    8000 |  1.0000 | [1.0000, 1.0000] |   0.0000 |      YES ✓
+    9000 |  1.0000 | [1.0000, 1.0000] |   0.0000 |      YES ✓
+
+  ✓ AV appears to CONVERGE to 1 (mean=1.0000 is within ε=0.01 of 1)
+
+Plot saved as 'plots/simulation_gc_convergence\gc_convergence_m8_alpha1.0_B4.0_20260119_021409.png'
+
+================================================================================
+CONVERGENCE SUMMARY
+================================================================================
+
+Definition of 'sufficiently close to 1':
+  - Performance ratio is within ε = 0.01 of 1.0
+  - i.e., performance ∈ [0.990, 1.000]
+  - Verified via TOST (Two One-Sided Tests) at α = 0.05
+
+Rule       | Final Mean |  Converged at n |          Status
+-----------+------------+-----------------+----------------
+GC         |     0.9994 |        n ≥ 3000 |     ✓ CONVERGED
+AV         |     1.0000 |        n ≥ 1000 |     ✓ CONVERGED
+
+================================================================================
+
+Simulation complete!

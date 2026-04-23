@@ -13,9 +13,9 @@ from typing import List, Tuple
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, approval_voting_per_cost, greedy_cover, gc_plus_av,
-    method_of_equal_shares, mes_plus_av, phragmen, proportional_approval_voting,
-    calculate_informed_ratio, generate_instance
+    approval_voting, approval_voting_per_cost, greedy_cover,
+    method_of_equal_shares, mes_plus_av, mes_plus_phragmen, phragmen, 
+    proportional_approval_voting, calculate_informed_ratio, generate_instance
 )
 
 
@@ -44,10 +44,10 @@ def run_convergence_analysis(n_values: List[int], m: int, alpha: float,
     voting_rules = {
         'AV': approval_voting,
         'AV/Cost': approval_voting_per_cost,
-        # 'GC': greedy_cover,  # Commented out - use GC+AV instead
-        'GC+AV': gc_plus_av,
-        # 'MES': method_of_equal_shares,  # Commented out - use MES+AV instead
+        'GC': greedy_cover,
+        'MES': method_of_equal_shares,
         'MES+AV': mes_plus_av,
+        'MES+Phragmen': mes_plus_phragmen,
         'Phragmen': phragmen
     }
     
@@ -90,6 +90,164 @@ def run_convergence_analysis(n_values: List[int], m: int, alpha: float,
             print(f"  {rule_name}: {np.mean(ratios):.4f} ± {np.std(ratios):.4f}")
     
     return results, voting_rules.keys()
+
+
+def test_convergence_to_one(results: dict, rule_names: List[str], n_values: List[int],
+                            epsilon: float = 0.02, alpha_level: float = 0.05) -> dict:
+    """
+    Statistical hypothesis testing for convergence to 1.
+    
+    Tests performed for each rule at each n:
+    1. One-sample t-test: H0: μ = 1 vs H1: μ < 1
+       - If p > alpha, cannot reject H0, suggests mean could be 1
+    2. Equivalence test (TOST): H0: |μ - 1| >= ε vs H1: |μ - 1| < ε
+       - If p < alpha, reject H0, conclude mean is within ε of 1
+    3. Confidence interval check: Does 95% CI include 1?
+    
+    "Sufficiently close to 1" definition:
+    - Primary: TOST p-value < alpha (equivalence established within ε)
+    - Secondary: 95% CI lower bound >= 1 - ε (practical equivalence)
+    
+    Args:
+        results: Dictionary with 'all' containing trial data
+        rule_names: List of rule names
+        n_values: List of n values tested
+        epsilon: Equivalence margin (default 0.02, i.e., within 2% of 1)
+        alpha_level: Significance level (default 0.05)
+    
+    Returns:
+        Dictionary with test results for each rule and n
+    """
+    from scipy import stats
+    
+    test_results = {rule: {} for rule in rule_names}
+    
+    print("\n" + "=" * 80)
+    print("CONVERGENCE HYPOTHESIS TESTING")
+    print("=" * 80)
+    print(f"Epsilon (equivalence margin): {epsilon}")
+    print(f"Alpha level: {alpha_level}")
+    print(f"'Sufficiently close to 1' means: performance within [{1-epsilon:.3f}, 1.000]")
+    print("=" * 80)
+    
+    for rule_name in rule_names:
+        print(f"\n{'─' * 40}")
+        print(f"Rule: {rule_name}")
+        print(f"{'─' * 40}")
+        
+        test_results[rule_name] = {
+            'n_values': n_values,
+            't_test_p': [],
+            'tost_p': [],
+            'ci_lower': [],
+            'ci_upper': [],
+            'is_converged': [],
+            'mean': [],
+            'std': []
+        }
+        
+        for i, n in enumerate(n_values):
+            data = np.array(results[rule_name]['all'][i])
+            mean = np.mean(data)
+            std = np.std(data, ddof=1)
+            n_samples = len(data)
+            se = std / np.sqrt(n_samples) if n_samples > 0 else 1e-10
+            
+            # 1. One-sample t-test (H0: μ = 1, H1: μ < 1)
+            if n_samples > 1 and se > 1e-10:
+                t_stat, t_pvalue_two = stats.ttest_1samp(data, 1.0)
+                t_pvalue = t_pvalue_two / 2 if t_stat < 0 else 1 - t_pvalue_two / 2
+            else:
+                t_pvalue = 1.0 if mean >= 1.0 else 0.0
+            
+            # 2. TOST for equivalence
+            if n_samples > 1 and se > 1e-10:
+                t_lower = (mean - (1 - epsilon)) / se
+                p_lower = 1 - stats.t.cdf(t_lower, n_samples - 1)
+                t_upper = (mean - (1 + epsilon)) / se
+                p_upper = stats.t.cdf(t_upper, n_samples - 1)
+                tost_p = max(p_lower, p_upper)
+            else:
+                tost_p = 0.0 if abs(mean - 1.0) < epsilon else 1.0
+            
+            # 3. Confidence interval
+            if n_samples > 1:
+                t_critical = stats.t.ppf(1 - alpha_level / 2, n_samples - 1)
+                ci_lower = mean - t_critical * se
+                ci_upper = mean + t_critical * se
+            else:
+                ci_lower = ci_upper = mean
+            
+            # Determine convergence
+            is_converged = (tost_p < alpha_level) or (ci_lower >= 1 - epsilon)
+            
+            test_results[rule_name]['t_test_p'].append(t_pvalue)
+            test_results[rule_name]['tost_p'].append(tost_p)
+            test_results[rule_name]['ci_lower'].append(ci_lower)
+            test_results[rule_name]['ci_upper'].append(ci_upper)
+            test_results[rule_name]['is_converged'].append(is_converged)
+            test_results[rule_name]['mean'].append(mean)
+            test_results[rule_name]['std'].append(std)
+        
+        # Print summary for last few n values
+        print(f"\n  {'n':>6} | {'Mean':>7} | {'95% CI':>17} | {'TOST p':>8} | {'Converged?':>10}")
+        print(f"  {'-'*6}-+-{'-'*7}-+-{'-'*17}-+-{'-'*8}-+-{'-'*10}")
+        for i in range(max(0, len(n_values)-5), len(n_values)):
+            n = n_values[i]
+            mean = test_results[rule_name]['mean'][i]
+            ci_l = test_results[rule_name]['ci_lower'][i]
+            ci_u = test_results[rule_name]['ci_upper'][i]
+            tost_p = test_results[rule_name]['tost_p'][i]
+            converged = test_results[rule_name]['is_converged'][i]
+            conv_str = "YES ✓" if converged else "NO"
+            print(f"  {n:>6} | {mean:>7.4f} | [{ci_l:.4f}, {ci_u:.4f}] | {tost_p:>8.4f} | {conv_str:>10}")
+        
+        # Final verdict
+        last_converged = test_results[rule_name]['is_converged'][-1]
+        last_mean = test_results[rule_name]['mean'][-1]
+        if last_converged:
+            print(f"\n  ✓ {rule_name} appears to CONVERGE to 1 (mean={last_mean:.4f} is within ε={epsilon} of 1)")
+        else:
+            print(f"\n  ✗ {rule_name} has NOT YET converged (mean={last_mean:.4f}, need larger n)")
+    
+    return test_results
+
+
+def print_convergence_summary(test_results: dict, rule_names: List[str], 
+                              n_values: List[int], epsilon: float):
+    """Print a summary of convergence test results."""
+    print("\n" + "=" * 80)
+    print("CONVERGENCE SUMMARY")
+    print("=" * 80)
+    print(f"\nDefinition of 'sufficiently close to 1':")
+    print(f"  - Performance ratio is within ε = {epsilon} of 1.0")
+    print(f"  - i.e., performance ∈ [{1-epsilon:.3f}, 1.000]")
+    print(f"  - Verified via TOST (Two One-Sided Tests) at α = 0.05")
+    print()
+    
+    print(f"{'Rule':<12} | {'Final Mean':>10} | {'Converged at n':>15} | {'Status':>15}")
+    print(f"{'-'*12}-+-{'-'*10}-+-{'-'*15}-+-{'-'*15}")
+    
+    for rule_name in rule_names:
+        final_mean = test_results[rule_name]['mean'][-1]
+        
+        # Find first n where convergence is achieved
+        converged_n = None
+        for i, n in enumerate(n_values):
+            if test_results[rule_name]['is_converged'][i]:
+                converged_n = n
+                break
+        
+        if converged_n is not None:
+            status = "✓ CONVERGED"
+            conv_str = f"n ≥ {converged_n}"
+        else:
+            status = "✗ NOT YET"
+            conv_str = "n > " + str(n_values[-1])
+        
+        print(f"{rule_name:<12} | {final_mean:>10.4f} | {conv_str:>15} | {status:>15}")
+    
+    print("\n" + "=" * 80)
 
 
 def plot_convergence(n_values: List[int], results: dict, rule_names: List[str],
@@ -216,12 +374,13 @@ if __name__ == "__main__":
     # Simulation parameters
     # Convergence to 1.0 should only happen under alpha = 1 (unit cost)
     # Budget should be less than number of alternatives to observe convergence
-    n_values = list(range(10, 201, 10))  # n=10 to n=200 in steps of 10
+    n_values = list(range(10, 101, 10))  # n=10 to n=200 in steps of 10
     m = 8  # number of alternatives
     alpha = 1.0  # Unit cost - required for convergence to 1.0
-    budget = 5.0  # Budget < m (8) - can't afford all alternatives
+    budget = 4.0  # Budget < m (8) - can't afford all alternatives
     quality_range = (0, 2)  # binary qualities
-    utility_type = 'normal'  # or 'cost_proportional'
+    utility_type = 'cost_proportional'  # or 'normal'
+    epsilon = 0.01  # Equivalence margin for convergence test
     
     print("=" * 60)
     print("Convergence Analysis Simulation")
@@ -233,13 +392,23 @@ if __name__ == "__main__":
     print(f"  budget: {budget}")
     print(f"  quality range: {quality_range}")
     print(f"  utility type: {utility_type}")
+    print(f"  epsilon (convergence threshold): {epsilon}")
     print("=" * 60)
     
     # Run simulation for original n values
     results, rule_names = run_convergence_analysis(
         n_values, m, alpha, budget, quality_range,
-        utility_type, num_samples=30, num_trials=100  
+        utility_type, num_samples=100, num_trials=100 
     )
+    
+    # Hypothesis testing for convergence to 1
+    try:
+        from scipy import stats
+        test_results = test_convergence_to_one(results, rule_names, n_values, epsilon=epsilon)
+        print_convergence_summary(test_results, rule_names, n_values, epsilon)
+    except ImportError:
+        print("Warning: scipy not available, skipping convergence hypothesis testing")
+        test_results = None
     
     # Plot results
     try:
@@ -251,9 +420,9 @@ if __name__ == "__main__":
         plot_convergence(n_values, results, rule_names, m, alpha, budget, utility_type,
                         show_confidence=False, confidence_level=0.95)
     
-    # Statistical Analysis
-    test_results, win_counts = run_pairwise_tests(results, rule_names, n_values, x_label='n')
-    print_statistical_results(test_results, win_counts, rule_names, n_values, x_label='n')
+    # Statistical Analysis (pairwise comparisons)
+    test_results_pairwise, win_counts = run_pairwise_tests(results, rule_names, n_values, x_label='n')
+    print_statistical_results(test_results_pairwise, win_counts, rule_names, n_values, x_label='n')
     print_win_matrix(win_counts, rule_names, n_values)
     print_effect_size_interpretation()
     

@@ -13,9 +13,9 @@ from typing import List, Tuple
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, approval_voting_per_cost, greedy_cover, gc_plus_av,
-    method_of_equal_shares, mes_plus_av, phragmen, proportional_approval_voting,
-    calculate_informed_ratio, generate_instance
+    approval_voting, approval_voting_per_cost, greedy_cover,
+    method_of_equal_shares, mes_plus_av, mes_plus_phragmen, phragmen, 
+    proportional_approval_voting, calculate_informed_ratio, generate_instance
 )
 
 
@@ -48,10 +48,10 @@ def run_alpha_scaled_analysis(n: int, m: int, base_budget: float,
     voting_rules = {
         'AV': approval_voting,
         'AV/Cost': approval_voting_per_cost,
-        # 'GC': greedy_cover,  # Commented out - use GC+AV instead
-        'GC+AV': gc_plus_av,
-        # 'MES': method_of_equal_shares,  # Commented out - use MES+AV instead
+        'GC': greedy_cover,
+        'MES': method_of_equal_shares,
         'MES+AV': mes_plus_av,
+        'MES+Phragmen': mes_plus_phragmen,
         'Phragmen': phragmen
     }
     
@@ -118,6 +118,7 @@ def plot_alpha_scaled(alpha_values: List[float], results: dict, rule_names: List
         'GC+AV': {'color': '#e377c2', 'marker': '*', 'linestyle': '--', 'markersize': 10},
         'MES': {'color': '#2ca02c', 'marker': '^', 'linestyle': '-.', 'markersize': 8},
         'MES+AV': {'color': '#d62728', 'marker': 'v', 'linestyle': ':', 'markersize': 8},
+        'MES+Phragmen': {'color': '#bcbd22', 'marker': 'P', 'linestyle': '-.', 'markersize': 9},
         'Phragmen': {'color': '#9467bd', 'marker': 'D', 'linestyle': '-', 'markersize': 8},
         'PAV': {'color': '#8c564b', 'marker': 'p', 'linestyle': '--', 'markersize': 8}
     }
@@ -193,10 +194,10 @@ if __name__ == "__main__":
     # Simulation parameters - Scaled budget with alpha
     n = 100  # Fixed number of agents (upwards of 200)
     m = 8  # number of alternatives
-    base_budget = 5.0  # Base budget (budget scales as base_B * (1+alpha)/2)
+    base_budget = 4.0  # Base budget (budget scales as base_B * (1+alpha)/2)
     alpha_values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]  # Alpha from 1 to 10
     quality_range = (0, 2)  # binary qualities
-    utility_type = 'normal'  # or 'cost_proportional'
+    utility_type = 'cost_proportional'  # or 'normal'
     
     print("=" * 60)
     print("Scaled Budget with Scaled Alpha Simulation")
@@ -213,7 +214,7 @@ if __name__ == "__main__":
     # Run simulation
     results, rule_names = run_alpha_scaled_analysis(
         n, m, base_budget, alpha_values, quality_range,
-        utility_type, num_samples=30, num_trials=100
+        utility_type, num_samples=100, num_trials=100
     )
     
     # Plot results
