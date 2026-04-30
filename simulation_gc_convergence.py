@@ -14,7 +14,7 @@ from scipy import stats
 
 # Import functions from the main simulation module
 from simulation import (
-    approval_voting, approval_voting_per_cost, greedy_cover, gc_plus_av,
+    approval_voting, approval_voting_per_cost, greedy_cover,
     method_of_equal_shares, mes_plus_av, mes_plus_phragmen, phragmen,
     proportional_approval_voting,
     calculate_informed_ratio, generate_instance
@@ -47,7 +47,6 @@ def run_gc_convergence_analysis(n_values: List[int], m: int, alpha: float,
         'AV': approval_voting,
         'AV/Cost': approval_voting_per_cost,
         'GC': greedy_cover,
-        'GC+AV': gc_plus_av,
         'MES': method_of_equal_shares,
         'MES+AV': mes_plus_av,
         'MES+Phragmen': mes_plus_phragmen,

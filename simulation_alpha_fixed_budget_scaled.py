@@ -15,7 +15,7 @@ from typing import List, Tuple
 # Import functions from the main simulation module
 from simulation import (
     approval_voting, approval_voting_per_cost, greedy_cover,
-    gc_plus_av, method_of_equal_shares, mes_plus_av, mes_plus_phragmen, phragmen,
+    method_of_equal_shares, mes_plus_av, mes_plus_phragmen, phragmen,
     proportional_approval_voting, calculate_informed_ratio, generate_instance
 )
 
@@ -46,7 +46,6 @@ def run_budget_scaled_analysis(n: int, m: int, alpha: float,
         'AV': approval_voting,
         'AV/Cost': approval_voting_per_cost,
         'GC': greedy_cover,
-        'GC+AV': gc_plus_av,
         'MES': method_of_equal_shares,
         'MES+AV': mes_plus_av,
         'MES+Phragmen': mes_plus_phragmen,
@@ -108,7 +107,6 @@ def plot_budget_scaled(budget_values: List[float], results: dict, rule_names: Li
         'AV': {'color': '#1f77b4', 'marker': 'o', 'linestyle': '-', 'markersize': 8},
         'AV/Cost': {'color': '#17becf', 'marker': 'H', 'linestyle': '-', 'markersize': 9},
         'GC': {'color': '#ff7f0e', 'marker': 's', 'linestyle': '--', 'markersize': 8},
-        'GC+AV': {'color': '#e377c2', 'marker': '*', 'linestyle': '--', 'markersize': 10},
         'MES': {'color': '#2ca02c', 'marker': '^', 'linestyle': '-.', 'markersize': 8},
         'MES+AV': {'color': '#d62728', 'marker': 'v', 'linestyle': ':', 'markersize': 8},
         'MES+Phragmen': {'color': '#bcbd22', 'marker': 'P', 'linestyle': '-.', 'markersize': 9},

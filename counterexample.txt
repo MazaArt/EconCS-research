@@ -1,0 +1,36 @@
+========================================================================
+Counterexample: quality dominance violation
+========================================================================
+m=8, k=4, n=2000, seed=0, unit costs, budget=4.0
+A index=3 (quality=2)
+B index=4 (quality=1)
+Signal order violates QD: B has strictly more positive signals than A.
+Specifically: P_B(1) > P_A(1) and P_B(2) > P_A(2), despite quality(A)=2 > quality(B)=1.
+
+Signal distributions P(signal=1 | quality=q):
+  A (project 3): q=1 -> 0.2, q=2 -> 0.2
+  B (project 4): q=1 -> 0.5, q=2 -> 0.7
+  Projects 0..2 (quality-2 group before A): q=1 -> 0.3, q=2 -> 0.6
+  Projects 5..7 (quality-1 group after B): q=1 -> 0.1, q=2 -> 0.2
+
+Realized approval rates from sampled votes:
+  A (project 3): approvals=461/2000 (0.231)
+  B (project 4): approvals=1015/2000 (0.507)
+  Mean over projects 0..2: 0.622
+  Mean over projects 5..7: 0.103
+
+Optimal (true-quality) set: [0, 1, 2, 3]
+Optimal utility: 8.0
+------------------------------------------------------------------------
+AV             chosen=[0, 1, 2, 4] utility=7.0/8.0 <-- witness (B in, A out)
+AV/Cost        chosen=[0, 1, 2, 4] utility=7.0/8.0 <-- witness (B in, A out)
+GC             chosen=[0, 1, 2, 4] utility=7.0/8.0 <-- witness (B in, A out)
+GC+AV          chosen=[0, 1, 2, 4] utility=7.0/8.0 <-- witness (B in, A out)
+MES            chosen=[0, 1, 2] utility=6.0/8.0
+MES+AV         chosen=[0, 1, 2, 4] utility=7.0/8.0 <-- witness (B in, A out)
+MES+Phragmen   chosen=[0, 1, 2, 4] utility=7.0/8.0 <-- witness (B in, A out)
+Phragmen       chosen=[0, 1, 2, 4] utility=7.0/8.0 <-- witness (B in, A out)
+PAV            chosen=[0, 1, 2, 4] utility=7.0/8.0 <-- witness (B in, A out)
+------------------------------------------------------------------------
+Conclusion: At least one aggregation rule selects B but not A.
+This demonstrates QD is necessary for quality-ranked selection guarantees.

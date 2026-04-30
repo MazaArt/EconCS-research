@@ -15,11 +15,11 @@ This can cause B to be selected while A is excluded.
 from __future__ import annotations
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 from simulation import (
     approval_voting,
     approval_voting_per_cost,
-    gc_plus_av,
     greedy_cover,
     knapsack_optimal,
     method_of_equal_shares,
@@ -90,7 +90,6 @@ def run_counterexample(m: int = 8, k: int = 4, n: int = 2000, seed: int = 0) -> 
         "AV": approval_voting,
         "AV/Cost": approval_voting_per_cost,
         "GC": greedy_cover,
-        "GC+AV": gc_plus_av,
         "MES": method_of_equal_shares,
         "MES+AV": mes_plus_av,
         "MES+Phragmen": mes_plus_phragmen,
@@ -154,10 +153,8 @@ def run_counterexample(m: int = 8, k: int = 4, n: int = 2000, seed: int = 0) -> 
         witness_found = witness_found or includes_b_not_a
 
         marker = " <-- witness (B in, A out)" if includes_b_not_a else ""
-        print(
-            f"{rule_name:14s} chosen={chosen_sorted} "
-            f"utility={chosen_utility:.1f}/{optimal_utility:.1f}{marker}"
-        )
+        performance = chosen_utility / max(optimal_utility, 1e-10)
+        print(f"{rule_name:14s} chosen={chosen_sorted} performance={performance:.3f}{marker}")
 
     print("-" * 72)
     if witness_found:
@@ -165,6 +162,124 @@ def run_counterexample(m: int = 8, k: int = 4, n: int = 2000, seed: int = 0) -> 
         print("This demonstrates QD is necessary for quality-ranked selection guarantees.")
     else:
         print("No witness found under current parameters; try increasing n or changing m,k.")
+
+
+def run_counterexample_aggregate(
+    m: int = 8,
+    k: int = 4,
+    n: int = 2000,
+    num_runs: int = 50,
+    seed_start: int = 0,
+    save_plot: bool = True,
+    plot_filename: str = "plots/requested_experiments/counterexample_performance.png",
+) -> None:
+    """
+    Aggregate the counterexample across multiple seeds and report cumulative stats.
+    """
+    if num_runs <= 0:
+        raise ValueError("num_runs must be positive.")
+    if not (2 <= k < m):
+        raise ValueError("Require 2 <= k < m.")
+
+    costs = np.ones(m, dtype=float)
+    budget = float(k)
+    qualities = np.array([2] * k + [1] * (m - k), dtype=int)
+    a_idx = k - 1
+    b_idx = k
+
+    signal_distribution: dict[int, dict[int, float]] = {}
+    for j in range(m):
+        if j <= k - 2:
+            signal_distribution[j] = {1: 0.30, 2: 0.62}
+        elif j == a_idx:
+            signal_distribution[j] = {1: 0.18, 2: 0.22}
+        elif j == b_idx:
+            signal_distribution[j] = {1: 0.52, 2: 0.72}
+        else:
+            signal_distribution[j] = {1: 0.10, 2: 0.20}
+
+    rules = {
+        "AV": approval_voting,
+        "AV/Cost": approval_voting_per_cost,
+        "GC": greedy_cover,
+        "MES": method_of_equal_shares,
+        "MES+AV": mes_plus_av,
+        "MES+Phragmen": mes_plus_phragmen,
+        "Phragmen": phragmen,
+    }
+    if m <= 12:
+        rules["PAV"] = proportional_approval_voting
+
+    _, optimal_utility = knapsack_optimal(
+        qualities=qualities,
+        costs=costs,
+        budget=budget,
+        use_cost_proportional=False,
+    )
+
+    perf_by_rule = {name: [] for name in rules}
+    witness_by_rule = {name: 0 for name in rules}
+
+    for run_idx in range(num_runs):
+        seed = seed_start + run_idx
+        votes = build_counterexample_votes(
+            n=n,
+            m=m,
+            qualities=qualities,
+            signal_distribution=signal_distribution,
+            seed=seed,
+        )
+        for rule_name, rule_func in rules.items():
+            chosen = rule_func(votes, costs, budget)
+            chosen_utility = sum(qualities[j] for j in chosen)
+            performance = chosen_utility / max(optimal_utility, 1e-10)
+            perf_by_rule[rule_name].append(float(performance))
+            if (b_idx in chosen) and (a_idx not in chosen):
+                witness_by_rule[rule_name] += 1
+
+    print("=" * 72)
+    print("Counterexample aggregate runner")
+    print("=" * 72)
+    print(f"m={m}, k={k}, n={n}, num_runs={num_runs}, seed_start={seed_start}")
+    print("-" * 72)
+    for rule_name in rules:
+        mean_perf = float(np.mean(perf_by_rule[rule_name]))
+        std_perf = float(np.std(perf_by_rule[rule_name]))
+        witness_rate = witness_by_rule[rule_name] / num_runs
+        print(
+            f"{rule_name:14s} mean_performance={mean_perf:.4f} "
+            f"std={std_perf:.4f} witness_rate={witness_rate:.3f}"
+        )
+
+    if save_plot:
+        import os
+
+        os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
+        labels = list(rules.keys())
+        means = [float(np.mean(perf_by_rule[name])) for name in labels]
+        stds = [float(np.std(perf_by_rule[name])) for name in labels]
+        witness_rates = [witness_by_rule[name] / num_runs for name in labels]
+
+        x = np.arange(len(labels))
+        fig, ax1 = plt.subplots(figsize=(11, 6))
+        ax1.bar(x, means, yerr=stds, capsize=4, alpha=0.75, color="#4C72B0")
+        ax1.set_ylim(0.0, 1.05)
+        ax1.set_ylabel("Performance")
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(labels, rotation=25, ha="right")
+        ax1.axhline(1.0, color="red", linestyle="--", alpha=0.6)
+        ax1.grid(axis="y", alpha=0.25)
+
+        ax2 = ax1.twinx()
+        ax2.plot(x, witness_rates, color="#DD8452", marker="o", linewidth=2)
+        ax2.set_ylim(0.0, 1.0)
+        ax2.set_ylabel("Witness rate (B in, A out)")
+
+        plt.title("Counterexample aggregate: performance and witness rate")
+        plt.tight_layout()
+        plt.savefig(plot_filename, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Saved aggregate plot: {plot_filename}")
 
 
 if __name__ == "__main__":

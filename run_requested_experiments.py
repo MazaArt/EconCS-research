@@ -7,7 +7,9 @@ plots to plots/requested_experiments/. Files are overwritten on reruns.
 
 import os
 import sys
+import json
 from typing import Dict, List, Tuple
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -24,6 +26,7 @@ from experiment_suite import (
 
 
 OUTPUT_DIR = "plots/requested_experiments"
+DATA_DIR = "data/requested_experiments"
 CASE_1C_N_VALUES = list(range(10, 201, 10))
 CASE_1C_NUM_SAMPLES = 4
 CASE_1C_NUM_TRIALS = 2
@@ -32,6 +35,34 @@ VALID_EXPERIMENT_IDS = {"1a", "1b", "1c", "2", "3a", "3b", "4", "5"}
 
 def _ensure_output_dir() -> None:
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+
+def _to_builtin(value):
+    if isinstance(value, dict):
+        return {str(k): _to_builtin(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_builtin(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        return float(value)
+    return value
+
+
+def _save_simulation_data(case_id: str, params: dict, raw_data: dict) -> None:
+    payload = {
+        "case_id": case_id,
+        "saved_at": datetime.now().isoformat(timespec="seconds"),
+        "params": _to_builtin(params),
+        "raw_data": _to_builtin(raw_data),
+    }
+    path = os.path.join(DATA_DIR, f"{case_id}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    print(f"Saved simulation data: {path}")
 
 
 def _summarize(per_rule: Dict[str, List[float]]) -> Tuple[Dict[str, float], Dict[str, float]]:
@@ -164,6 +195,7 @@ def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
             num_samples=case_num_samples,
             num_trials=case_num_trials,
         )
+        _save_simulation_data(case_id=f"case1{label}", params=setting, raw_data=raw)
         rules = list(next(iter(raw.values())).keys())
         means = {rule: [] for rule in rules}
         stds = {rule: [] for rule in rules}
@@ -204,6 +236,7 @@ def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
         num_samples=num_samples,
         num_trials=num_trials,
     )
+    _save_simulation_data(case_id="case2", params=bcfg, raw_data=raw)
     budgets = bcfg["budget_values"]
     rules = list(next(iter(raw.values())).keys())
     means = {rule: [] for rule in rules}
@@ -236,6 +269,7 @@ def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
         num_samples=num_samples,
         num_trials=num_trials,
     )
+    _save_simulation_data(case_id="case3a", params=acfg, raw_data=raw)
     alphas = acfg["alpha_values"]
     rules = list(next(iter(raw.values())).keys())
     means = {rule: [] for rule in rules}
@@ -270,6 +304,11 @@ def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
             num_trials=num_trials,
         )
         raw = raw_nested[ratio]
+        _save_simulation_data(
+            case_id=f"case3b_ratio_{str(ratio).replace('.', 'p')}",
+            params={"ratio": ratio, **rcfg},
+            raw_data=raw,
+        )
         alphas = rcfg["alpha_values"]
         rules = list(next(iter(raw.values())).keys())
         means = {rule: [] for rule in rules}
@@ -304,6 +343,7 @@ def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
         num_samples=num_samples,
         num_trials=num_trials,
     )
+    _save_simulation_data(case_id="case4", params=scfg, raw_data=raw)
     type_counts = scfg["num_types_values"]
     rules = list(next(iter(raw.values())).keys())
     means = {rule: [] for rule in rules}
@@ -338,6 +378,11 @@ def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
             num_trials=num_trials,
         )
         raw = raw_nested[alpha]
+        _save_simulation_data(
+            case_id=f"case5_alpha_{int(alpha)}",
+            params={"alpha": alpha, **mcfg},
+            raw_data=raw,
+        )
         # m crosses the PAV inclusion threshold (<=12), so keep only rules
         # that are present for every (m, budget) point to avoid KeyError.
         rules = sorted(set.intersection(*(set(point.keys()) for point in raw.values())))
@@ -415,6 +460,7 @@ def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: in
                 num_samples=case_num_samples,
                 num_trials=case_num_trials,
             )
+            _save_simulation_data(case_id=f"case{case_id}", params=setting, raw_data=raw)
             rules = list(next(iter(raw.values())).keys())
             means = {rule: [] for rule in rules}
             stds = {rule: [] for rule in rules}
@@ -456,6 +502,7 @@ def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: in
             num_samples=num_samples,
             num_trials=num_trials,
         )
+        _save_simulation_data(case_id="case2", params=bcfg, raw_data=raw)
         budgets = bcfg["budget_values"]
         rules = list(next(iter(raw.values())).keys())
         means = {rule: [] for rule in rules}
@@ -489,6 +536,7 @@ def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: in
             num_samples=num_samples,
             num_trials=num_trials,
         )
+        _save_simulation_data(case_id="case3a", params=acfg, raw_data=raw)
         alphas = acfg["alpha_values"]
         rules = list(next(iter(raw.values())).keys())
         means = {rule: [] for rule in rules}
@@ -524,6 +572,11 @@ def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: in
                 num_trials=num_trials,
             )
             raw = raw_nested[ratio]
+            _save_simulation_data(
+                case_id=f"case3b_ratio_{str(ratio).replace('.', 'p')}",
+                params={"ratio": ratio, **rcfg},
+                raw_data=raw,
+            )
             alphas = rcfg["alpha_values"]
             rules = list(next(iter(raw.values())).keys())
             means = {rule: [] for rule in rules}
@@ -559,6 +612,7 @@ def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: in
             num_samples=num_samples,
             num_trials=num_trials,
         )
+        _save_simulation_data(case_id="case4", params=scfg, raw_data=raw)
         type_counts = scfg["num_types_values"]
         rules = list(next(iter(raw.values())).keys())
         means = {rule: [] for rule in rules}
@@ -594,6 +648,11 @@ def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: in
                 num_trials=num_trials,
             )
             raw = raw_nested[alpha]
+            _save_simulation_data(
+                case_id=f"case5_alpha_{int(alpha)}",
+                params={"alpha": alpha, **mcfg},
+                raw_data=raw,
+            )
             # m crosses the PAV inclusion threshold (<=12), so keep only rules
             # that are present for every (m, budget) point to avoid KeyError.
             rules = sorted(set.intersection(*(set(point.keys()) for point in raw.values())))
