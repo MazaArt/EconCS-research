@@ -210,7 +210,7 @@ def run_counterexample_aggregate(
     if m <= 12:
         rules["PAV"] = proportional_approval_voting
 
-    _, optimal_utility = knapsack_optimal(
+    optimal_set, optimal_utility = knapsack_optimal(
         qualities=qualities,
         costs=costs,
         budget=budget,
@@ -218,7 +218,14 @@ def run_counterexample_aggregate(
     )
 
     perf_by_rule = {name: [] for name in rules}
-    witness_by_rule = {name: 0 for name in rules}
+    counts_by_rule = {
+        name: {
+            "opt_chose_a": 0,
+            "non_opt_chose_b": 0,
+            "non_opt_else": 0,
+        }
+        for name in rules
+    }
 
     for run_idx in range(num_runs):
         seed = seed_start + run_idx
@@ -231,11 +238,18 @@ def run_counterexample_aggregate(
         )
         for rule_name, rule_func in rules.items():
             chosen = rule_func(votes, costs, budget)
+            chosen_sorted = tuple(sorted(chosen))
             chosen_utility = sum(qualities[j] for j in chosen)
             performance = chosen_utility / max(optimal_utility, 1e-10)
             perf_by_rule[rule_name].append(float(performance))
-            if (b_idx in chosen) and (a_idx not in chosen):
-                witness_by_rule[rule_name] += 1
+
+            is_opt = chosen_sorted == tuple(sorted(optimal_set))
+            if is_opt and (a_idx in chosen):
+                counts_by_rule[rule_name]["opt_chose_a"] += 1
+            elif (not is_opt) and (b_idx in chosen):
+                counts_by_rule[rule_name]["non_opt_chose_b"] += 1
+            else:
+                counts_by_rule[rule_name]["non_opt_else"] += 1
 
     print("=" * 72)
     print("Counterexample aggregate runner")
@@ -245,10 +259,15 @@ def run_counterexample_aggregate(
     for rule_name in rules:
         mean_perf = float(np.mean(perf_by_rule[rule_name]))
         std_perf = float(np.std(perf_by_rule[rule_name]))
-        witness_rate = witness_by_rule[rule_name] / num_runs
+        opt_chose_a = counts_by_rule[rule_name]["opt_chose_a"]
+        non_opt_chose_b = counts_by_rule[rule_name]["non_opt_chose_b"]
+        non_opt_else = counts_by_rule[rule_name]["non_opt_else"]
         print(
             f"{rule_name:14s} mean_performance={mean_perf:.4f} "
-            f"std={std_perf:.4f} witness_rate={witness_rate:.3f}"
+            f"std={std_perf:.4f} "
+            f"OPT_chose_A={opt_chose_a} "
+            f"NonOPT_chose_B={non_opt_chose_b} "
+            f"NonOPT_else={non_opt_else}"
         )
 
     if save_plot:
@@ -256,26 +275,41 @@ def run_counterexample_aggregate(
 
         os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
         labels = list(rules.keys())
-        means = [float(np.mean(perf_by_rule[name])) for name in labels]
-        stds = [float(np.std(perf_by_rule[name])) for name in labels]
-        witness_rates = [witness_by_rule[name] / num_runs for name in labels]
+        opt_chose_a_vals = [counts_by_rule[name]["opt_chose_a"] for name in labels]
+        non_opt_chose_b_vals = [counts_by_rule[name]["non_opt_chose_b"] for name in labels]
+        non_opt_else_vals = [counts_by_rule[name]["non_opt_else"] for name in labels]
 
+        bar_width = 0.26
         x = np.arange(len(labels))
-        fig, ax1 = plt.subplots(figsize=(11, 6))
-        ax1.bar(x, means, yerr=stds, capsize=4, alpha=0.75, color="#4C72B0")
-        ax1.set_ylim(0.0, 1.05)
-        ax1.set_ylabel("Performance")
-        ax1.set_xticks(x)
-        ax1.set_xticklabels(labels, rotation=25, ha="right")
-        ax1.axhline(1.0, color="red", linestyle="--", alpha=0.6)
-        ax1.grid(axis="y", alpha=0.25)
-
-        ax2 = ax1.twinx()
-        ax2.plot(x, witness_rates, color="#DD8452", marker="o", linewidth=2)
-        ax2.set_ylim(0.0, 1.0)
-        ax2.set_ylabel("Witness rate (B in, A out)")
-
-        plt.title("Counterexample aggregate: performance and witness rate")
+        fig, ax = plt.subplots(figsize=(13, 6))
+        ax.bar(
+            x - bar_width,
+            opt_chose_a_vals,
+            width=bar_width,
+            label="OPT, chose A",
+            color="#4C72B0",
+        )
+        ax.bar(
+            x,
+            non_opt_chose_b_vals,
+            width=bar_width,
+            label="Non-OPT, chose B",
+            color="#DD8452",
+        )
+        ax.bar(
+            x + bar_width,
+            non_opt_else_vals,
+            width=bar_width,
+            label="Non-OPT, else",
+            color="#55A868",
+        )
+        ax.set_ylabel("Count")
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=25, ha="right")
+        ax.set_ylim(0.0, float(num_runs) * 1.05)
+        ax.grid(axis="y", alpha=0.25)
+        ax.legend(loc="upper right")
+        plt.title(f"Counterexample aggregate outcome categories ({num_runs} runs)")
         plt.tight_layout()
         plt.savefig(plot_filename, dpi=300, bbox_inches="tight")
         plt.close(fig)
