@@ -14,12 +14,16 @@ This can cause B to be selected while A is excluded.
 
 from __future__ import annotations
 
+import json
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 
 from simulation import (
     approval_voting,
     approval_voting_per_cost,
+    cost_bucketed_randomized_rule,
+    greedy_or_breakpoint_rule,
     greedy_cover,
     knapsack_optimal,
     method_of_equal_shares,
@@ -89,6 +93,8 @@ def run_counterexample(m: int = 8, k: int = 4, n: int = 2000, seed: int = 0) -> 
     rules = {
         "AV": approval_voting,
         "AV/Cost": approval_voting_per_cost,
+        "Bucket": cost_bucketed_randomized_rule,
+        "GoB": greedy_or_breakpoint_rule,
         "GC": greedy_cover,
         "MES": method_of_equal_shares,
         "MES+AV": mes_plus_av,
@@ -172,6 +178,8 @@ def run_counterexample_aggregate(
     seed_start: int = 0,
     save_plot: bool = True,
     plot_filename: str = "plots/requested_experiments/counterexample_performance.png",
+    save_data: bool = True,
+    data_filename: str = "data/requested_experiments/counterexample_aggregate.json",
 ) -> None:
     """
     Aggregate the counterexample across multiple seeds and report cumulative stats.
@@ -201,6 +209,8 @@ def run_counterexample_aggregate(
     rules = {
         "AV": approval_voting,
         "AV/Cost": approval_voting_per_cost,
+        "Bucket": cost_bucketed_randomized_rule,
+        "GoB": greedy_or_breakpoint_rule,
         "GC": greedy_cover,
         "MES": method_of_equal_shares,
         "MES+AV": mes_plus_av,
@@ -271,8 +281,6 @@ def run_counterexample_aggregate(
         )
 
     if save_plot:
-        import os
-
         os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
         labels = list(rules.keys())
         opt_chose_a_vals = [counts_by_rule[name]["opt_chose_a"] for name in labels]
@@ -314,6 +322,41 @@ def run_counterexample_aggregate(
         plt.savefig(plot_filename, dpi=300, bbox_inches="tight")
         plt.close(fig)
         print(f"Saved aggregate plot: {plot_filename}")
+
+    if save_data:
+        os.makedirs(os.path.dirname(data_filename), exist_ok=True)
+        payload = {
+            "case_id": "counterexample_aggregate",
+            "params": {
+                "m": int(m),
+                "k": int(k),
+                "n": int(n),
+                "num_runs": int(num_runs),
+                "seed_start": int(seed_start),
+            },
+            "optimal": {
+                "set": sorted(int(j) for j in optimal_set),
+                "utility": float(optimal_utility),
+                "a_idx": int(a_idx),
+                "b_idx": int(b_idx),
+            },
+            "results": {
+                rule_name: {
+                    "mean_performance": float(np.mean(perf_by_rule[rule_name])),
+                    "std_performance": float(np.std(perf_by_rule[rule_name])),
+                    "performances": [float(x) for x in perf_by_rule[rule_name]],
+                    "counts": {
+                        "opt_chose_a": int(counts_by_rule[rule_name]["opt_chose_a"]),
+                        "non_opt_chose_b": int(counts_by_rule[rule_name]["non_opt_chose_b"]),
+                        "non_opt_else": int(counts_by_rule[rule_name]["non_opt_else"]),
+                    },
+                }
+                for rule_name in rules
+            },
+        }
+        with open(data_filename, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        print(f"Saved aggregate data: {data_filename}")
 
 
 if __name__ == "__main__":

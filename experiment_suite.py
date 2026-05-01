@@ -13,6 +13,8 @@ from typing import Dict, List, Tuple
 from simulation import (
     approval_voting,
     approval_voting_per_cost,
+    cost_bucketed_randomized_rule,
+    greedy_or_breakpoint_rule,
     greedy_cover,
     method_of_equal_shares,
     mes_plus_av,
@@ -29,6 +31,8 @@ def _voting_rules(m: int):
     rules = {
         "AV": approval_voting,
         "AV/Cost": approval_voting_per_cost,
+        "Bucket": cost_bucketed_randomized_rule,
+        "GoB": greedy_or_breakpoint_rule,
         "GC": greedy_cover,
         "MES": method_of_equal_shares,
         "MES+AV": mes_plus_av,

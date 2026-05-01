@@ -100,6 +100,72 @@ def approval_voting_per_cost(votes: np.ndarray, costs: np.ndarray, budget: float
     return winning_set
 
 
+def cost_bucketed_randomized_rule(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    Cost-Bucketed Randomized rule (bucket).
+
+    1) Partition alternatives into log-scaled cost buckets using the empirical
+       cost ratio alpha = max(cost)/min(cost).
+    2) Pick one bucket uniformly at random.
+    3) Run AV on the chosen bucket only.
+    """
+    m = len(costs)
+    if m == 0:
+        return set()
+
+    min_cost = float(np.min(costs))
+    max_cost = float(np.max(costs))
+    if min_cost <= 0:
+        # Fallback to AV when bucket boundaries are not well-defined.
+        return approval_voting(votes, costs, budget)
+
+    alpha = max_cost / min_cost
+    k_buckets = int(np.ceil(np.log2(max(alpha, 1.0)))) + 1
+
+    normalized_costs = costs / min_cost
+    bucket_indices = []
+    for k in range(1, k_buckets + 1):
+        lower = 2 ** (k - 1)
+        upper = 2 ** k
+        indices = [j for j in range(m) if lower <= normalized_costs[j] < upper]
+        bucket_indices.append(indices)
+
+    chosen_bucket = int(np.random.randint(0, k_buckets))
+    chosen_indices = bucket_indices[chosen_bucket]
+    if not chosen_indices:
+        return set()
+
+    restricted_votes = votes[:, chosen_indices]
+    restricted_costs = costs[chosen_indices]
+    restricted_winners = approval_voting(restricted_votes, restricted_costs, budget)
+    return {chosen_indices[idx] for idx in restricted_winners}
+
+
+def greedy_or_breakpoint_rule(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    Greedy-or-Breakpoint rule (GoB).
+
+    Run AV first. If AV already selects all alternatives, return that outcome.
+    Otherwise, with probability 1/2 return AV's outcome; with probability 1/2
+    return a singleton consisting of the highest-approved unselected
+    alternative (restricted to items affordable under budget on their own).
+    """
+    m = len(costs)
+    av_winners = approval_voting(votes, costs, budget)
+    if len(av_winners) == m:
+        return av_winners
+
+    approval_counts = votes.sum(axis=0)
+    unselected_affordable = [j for j in range(m) if j not in av_winners and costs[j] <= budget]
+    if not unselected_affordable:
+        return av_winners
+
+    breakpoint_item = max(unselected_affordable, key=lambda j: (approval_counts[j], -j))
+    if np.random.random() < 0.5:
+        return av_winners
+    return {breakpoint_item}
+
+
 def proportional_approval_voting(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
     """
     PAV (Sequential Greedy): Iteratively select alternative with highest marginal PAV gain.
@@ -835,6 +901,8 @@ def run_simulation(n_values: List[int], m: int, alpha: float, budget: float,
     voting_rules = {
         'AV': approval_voting,
         'AV/Cost': approval_voting_per_cost,
+        'Bucket': cost_bucketed_randomized_rule,
+        'GoB': greedy_or_breakpoint_rule,
         'GC': greedy_cover,
         'MES': method_of_equal_shares,
         'MES+AV': mes_plus_av,
@@ -892,6 +960,8 @@ def plot_results(n_values: List[int], results: dict, title: str = "Performance v
     rule_styles = {
         'AV': {'color': '#1f77b4', 'marker': 'o', 'linestyle': '-', 'markersize': 8},
         'AV/Cost': {'color': '#17becf', 'marker': 'H', 'linestyle': '-', 'markersize': 9},
+        'Bucket': {'color': '#7f7f7f', 'marker': 'X', 'linestyle': '-', 'markersize': 8},
+        'GoB': {'color': '#e377c2', 'marker': '*', 'linestyle': '--', 'markersize': 11},
         'GC': {'color': '#ff7f0e', 'marker': 's', 'linestyle': '--', 'markersize': 8},
         'MES': {'color': '#2ca02c', 'marker': '^', 'linestyle': '-.', 'markersize': 8},
         'MES+AV': {'color': '#d62728', 'marker': 'v', 'linestyle': ':', 'markersize': 8},
