@@ -28,8 +28,10 @@ from experiment_suite import (
 OUTPUT_DIR = "plots/requested_experiments"
 DATA_DIR = "data/requested_experiments"
 CASE_1C_N_VALUES = list(range(10, 201, 10))
-CASE_1C_NUM_SAMPLES = 4
-CASE_1C_NUM_TRIALS = 2
+CASE_1C_NUM_SAMPLES = 100
+CASE_1C_NUM_TRIALS = 100
+DEFAULT_NUM_SAMPLES = 100
+DEFAULT_NUM_TRIALS = 100
 VALID_EXPERIMENT_IDS = {"1a", "1b", "1c", "2", "3a", "3b", "4", "5"}
 
 
@@ -167,7 +169,7 @@ def _plot_case_3a_rule_panels(
     plt.close()
 
 
-def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
+def run_all(num_samples: int = DEFAULT_NUM_SAMPLES, num_trials: int = DEFAULT_NUM_TRIALS) -> None:
     cfg = define_experiments()
     _ensure_output_dir()
 
@@ -217,9 +219,9 @@ def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
                 else f"Case 1{label}: Performance vs n (alpha={alpha}, budget={budget})"
             ),
             filename=(
-                f"case1{label}_cambridge_pb11_budget{int(budget)}.png"
+                f"case1{label}_cambridge_pb11_budget{int(budget)}_s{case_num_samples}_t{case_num_trials}.png"
                 if is_case_1c
-                else f"case1{label}_alpha{int(alpha)}_budget{int(budget)}.png"
+                else f"case1{label}_alpha{int(alpha)}_budget{int(budget)}_s{case_num_samples}_t{case_num_trials}.png"
             ),
         )
 
@@ -253,7 +255,7 @@ def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
         show_std=True,
         x_label="Budget",
         title=f"Case 2: Performance vs Budget (alpha={bcfg['alpha']})",
-        filename="case2_budget_increase_alpha20.png",
+        filename=f"case2_budget_increase_alpha20_s{num_samples}_t{num_trials}.png",
     )
 
     # 3a) Alpha increase, fixed budget
@@ -286,7 +288,7 @@ def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
         show_std=True,
         x_label="Alpha",
         title=f"Case 3a: Performance vs Alpha (fixed budget={acfg['budget']})",
-        filename="case3a_alpha_increase_fixed_budget40.png",
+        filename=f"case3a_alpha_increase_fixed_budget40_s{num_samples}_t{num_trials}.png",
     )
 
     # 3b) Alpha increase, constant ratio budget/(alpha+1)
@@ -326,7 +328,7 @@ def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
             show_std=True,
             x_label="Alpha",
             title=f"Case 3b: Performance vs Alpha (budget/(alpha+1)={ratio:.4f})",
-            filename=f"case3b_alpha_increase_ratio_{ratio_tag}.png",
+            filename=f"case3b_alpha_increase_ratio_{ratio_tag}_s{num_samples}_t{num_trials}.png",
         )
 
     # 4) Signal type case
@@ -360,7 +362,7 @@ def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
         show_std=True,
         x_label="Number of Agent Types",
         title=f"Case 4: Signal Types (alpha={scfg['alpha']}, budget={scfg['budget']})",
-        filename="case4_signal_types.png",
+        filename=f"case4_signal_types_s{num_samples}_t{num_trials}.png",
     )
 
     # 5) Alpha constant, m and budget increase
@@ -400,7 +402,7 @@ def run_all(num_samples: int = 10, num_trials: int = 5) -> None:
             show_std=True,
             x_label="Number of Projects (m)",
             title=f"Case 5: Performance vs m (alpha={alpha}, budget scales with m)",
-            filename=f"case5_alpha{int(alpha)}_m_budget_scaling.png",
+            filename=f"case5_alpha{int(alpha)}_m_budget_scaling_s{num_samples}_t{num_trials}.png",
         )
 
     print(f"All requested plots saved in: {OUTPUT_DIR}")
@@ -427,7 +429,11 @@ def _parse_experiment_selection(argv: List[str]) -> set[str]:
     return selected
 
 
-def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: int = 5) -> None:
+def run_selected(
+    experiment_ids: set[str],
+    num_samples: int = DEFAULT_NUM_SAMPLES,
+    num_trials: int = DEFAULT_NUM_TRIALS,
+) -> None:
     """Run only selected experiments and save plots."""
     cfg = define_experiments()
     _ensure_output_dir()
@@ -482,9 +488,9 @@ def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: in
                     else f"Case {case_id}: Performance vs n (alpha={alpha}, budget={budget})"
                 ),
                 filename=(
-                    f"case1{label}_cambridge_pb11_budget{int(budget)}.png"
+                    f"case1{label}_cambridge_pb11_budget{int(budget)}_s{case_num_samples}_t{case_num_trials}.png"
                     if is_case_1c
-                    else f"case1{label}_alpha{int(alpha)}_budget{int(budget)}.png"
+                    else f"case1{label}_alpha{int(alpha)}_budget{int(budget)}_s{case_num_samples}_t{case_num_trials}.png"
                 ),
             )
 
@@ -519,7 +525,7 @@ def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: in
             show_std=True,
             x_label="Budget",
             title=f"Case 2: Performance vs Budget (alpha={bcfg['alpha']})",
-            filename="case2_budget_increase_alpha20.png",
+            filename=f"case2_budget_increase_alpha20_s{num_samples}_t{num_trials}.png",
         )
 
     # 3a) Alpha increase, fixed budget
@@ -553,7 +559,7 @@ def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: in
             show_std=True,
             x_label="Alpha",
             title=f"Case 3a: Performance vs Alpha (fixed budget={acfg['budget']})",
-            filename="case3a_alpha_increase_fixed_budget40.png",
+            filename=f"case3a_alpha_increase_fixed_budget40_s{num_samples}_t{num_trials}.png",
         )
 
     # 3b) Alpha increase, constant ratio budget/(alpha+1)
@@ -594,7 +600,7 @@ def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: in
                 show_std=True,
                 x_label="Alpha",
                 title=f"Case 3b: Performance vs Alpha (budget/(alpha+1)={ratio:.4f})",
-                filename=f"case3b_alpha_increase_ratio_{ratio_tag}.png",
+                filename=f"case3b_alpha_increase_ratio_{ratio_tag}_s{num_samples}_t{num_trials}.png",
             )
 
     # 4) Signal type case
@@ -629,7 +635,7 @@ def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: in
             show_std=True,
             x_label="Number of Agent Types",
             title=f"Case 4: Signal Types (alpha={scfg['alpha']}, budget={scfg['budget']})",
-            filename="case4_signal_types.png",
+            filename=f"case4_signal_types_s{num_samples}_t{num_trials}.png",
         )
 
     # 5) Alpha constant, m and budget increase
@@ -670,7 +676,7 @@ def run_selected(experiment_ids: set[str], num_samples: int = 10, num_trials: in
                 show_std=True,
                 x_label="Number of Projects (m)",
                 title=f"Case 5: Performance vs m (alpha={alpha}, budget scales with m)",
-                filename=f"case5_alpha{int(alpha)}_m_budget_scaling.png",
+                filename=f"case5_alpha{int(alpha)}_m_budget_scaling_s{num_samples}_t{num_trials}.png",
             )
 
     print(f"Selected plots saved in: {OUTPUT_DIR}")
@@ -683,4 +689,4 @@ if __name__ == "__main__":
     except ValueError as exc:
         print(str(exc))
         sys.exit(1)
-    run_selected(selected, num_samples=10, num_trials=5)
+    run_selected(selected, num_samples=DEFAULT_NUM_SAMPLES, num_trials=DEFAULT_NUM_TRIALS)
