@@ -44,15 +44,19 @@ def _voting_rules(m: int):
     return rules
 
 
-def define_experiments() -> Dict[str, dict]:
+def define_experiments(utility_type: str = "normal") -> Dict[str, dict]:
     """Return all requested experiments as a structured dictionary."""
+    if utility_type not in ("normal", "cost_proportional"):
+        raise ValueError(
+            f"utility_type must be 'normal' or 'cost_proportional', got {utility_type!r}"
+        )
     return {
         # 1) Base Case: increase n at fixed alpha/budget pairs
         "base_case_n_scaling": {
             "n_values": list(range(10, 201, 10)),
             "m": 8,
             "quality_range": (0, 2),
-            "utility_type": "normal",
+            "utility_type": utility_type,
             "settings": [
                 {"label": "a", "alpha": 1.0, "budget": 4.0},
                 {"label": "b", "alpha": 5.0, "budget": 8.0},
@@ -78,7 +82,7 @@ def define_experiments() -> Dict[str, dict]:
             "alpha": 20.0,
             "budget_values": [20.0, 30.0, 40.0, 50.0],
             "quality_range": (0, 2),
-            "utility_type": "normal",
+            "utility_type": utility_type,
         },
         # 3a) Alpha Increase with fixed budget
         "alpha_increase_fixed_budget": {
@@ -87,7 +91,7 @@ def define_experiments() -> Dict[str, dict]:
             "budget": 40.0,
             "alpha_values": [5.0, 10.0, 15.0, 20.0, 25.0, 30.0],
             "quality_range": (0, 2),
-            "utility_type": "normal",
+            "utility_type": utility_type,
         },
         # 3b) Alpha Increase with fixed budget/(alpha+1) ratio
         "alpha_increase_constant_ratio": {
@@ -96,7 +100,7 @@ def define_experiments() -> Dict[str, dict]:
             "alpha_values": [5.0, 10.0, 15.0, 20.0, 25.0, 30.0],
             "ratios_budget_over_alpha_plus_one": [0.5, 1 / 3, 2 / 3, 0.25, 0.75],
             "quality_range": (0, 2),
-            "utility_type": "normal",
+            "utility_type": utility_type,
         },
         # 4) Signal Type case
         "signal_type_case": {
@@ -106,7 +110,7 @@ def define_experiments() -> Dict[str, dict]:
             "budget": 8.0,
             "num_types_values": [1, 2, 3, 4, 5],
             "quality_range": (0, 2),
-            "utility_type": "normal",
+            "utility_type": utility_type,
         },
         # 5) Alpha constant; projects and budget increase
         "alpha_constant_m_budget_increase": {
@@ -115,7 +119,7 @@ def define_experiments() -> Dict[str, dict]:
             "m_values": [4, 8, 12, 16, 20],
             "budget_values": [8.0, 16.0, 24.0, 32.0, 40.0],
             "quality_range": (0, 2),
-            "utility_type": "normal",
+            "utility_type": utility_type,
         },
     }
 
@@ -457,7 +461,7 @@ def run_alpha_constant_m_budget_increase_case(
 
 
 if __name__ == "__main__":
-    experiments = define_experiments()
+    experiments = define_experiments("normal")
     print("Experiment suite loaded with the following cases:")
     for key in experiments:
         print(f" - {key}")

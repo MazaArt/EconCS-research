@@ -27,12 +27,28 @@ from experiment_suite import (
 
 OUTPUT_DIR = "plots/requested_experiments"
 DATA_DIR = "data/requested_experiments"
+
+
+def _paths_for_utility(utility_type: str) -> Tuple[str, str]:
+    """Separate folders for cost-proportional runs so plots are not overwritten."""
+    if utility_type == "cost_proportional":
+        return (
+            "plots/requested_experiments_cost_proportional",
+            "data/requested_experiments_cost_proportional",
+        )
+    return "plots/requested_experiments", "data/requested_experiments"
+
+
 CASE_1C_N_VALUES = list(range(10, 201, 10))
 CASE_1C_NUM_SAMPLES = 100
 CASE_1C_NUM_TRIALS = 100
 DEFAULT_NUM_SAMPLES = 100
 DEFAULT_NUM_TRIALS = 100
-VALID_EXPERIMENT_IDS = {"1a", "1b", "1c", "2", "3a", "3b", "4", "5"}
+# Case 5 parallel ids zip to alpha_values in experiment_suite (same length required).
+CASE_5_SUBIDS = ("5a", "5b", "5c")
+VALID_EXPERIMENT_IDS = {"1a", "1b", "1c", "2", "3a", "3b", "4", "5", *CASE_5_SUBIDS}
+# `all` runs 5a–5c instead of `5` so Case 5 is not executed four times.
+ALL_EXPERIMENT_IDS = VALID_EXPERIMENT_IDS - {"5"}
 
 
 def _ensure_output_dir() -> None:
@@ -169,8 +185,18 @@ def _plot_case_3a_rule_panels(
     plt.close()
 
 
-def run_all(num_samples: int = DEFAULT_NUM_SAMPLES, num_trials: int = DEFAULT_NUM_TRIALS) -> None:
-    cfg = define_experiments()
+def _set_request_paths(utility_type: str) -> None:
+    global OUTPUT_DIR, DATA_DIR
+    OUTPUT_DIR, DATA_DIR = _paths_for_utility(utility_type)
+
+
+def run_all(
+    num_samples: int = DEFAULT_NUM_SAMPLES,
+    num_trials: int = DEFAULT_NUM_TRIALS,
+    utility_type: str = "normal",
+) -> None:
+    _set_request_paths(utility_type)
+    cfg = define_experiments(utility_type)
     _ensure_output_dir()
 
     # 1) Base case: n-scaling for each (alpha, budget) setting
@@ -408,6 +434,48 @@ def run_all(num_samples: int = DEFAULT_NUM_SAMPLES, num_trials: int = DEFAULT_NU
     print(f"All requested plots saved in: {OUTPUT_DIR}")
 
 
+def _parse_run_requested_argv(argv: List[str]) -> Tuple[str, List[str]]:
+    """
+    Strip --utility and return (utility_type, remaining args for experiment ids).
+
+    Examples:
+      python3 run_requested_experiments.py 1a --utility cost_proportional
+      python3 run_requested_experiments.py all --utility cost_proportional
+    """
+    utility_type = "normal"
+    rest: List[str] = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--utility":
+            if i + 1 >= len(argv):
+                raise ValueError("--utility requires a value: normal or cost_proportional")
+            utility_type = argv[i + 1]
+            i += 2
+            continue
+        rest.append(argv[i])
+        i += 1
+    if utility_type not in ("normal", "cost_proportional"):
+        raise ValueError(
+            f"Invalid --utility {utility_type!r}; use normal or cost_proportional."
+        )
+    return utility_type, rest
+
+
+def _case_5_alphas_to_run(experiment_ids: set[str], alpha_values: List[float]) -> List[float]:
+    """
+    Which Case 5 alphas to run: `5` runs all; `5a`/`5b`/`5c` run one each (dominant `5`
+    ignores sub-ids so nothing is duplicated).
+    """
+    if len(alpha_values) != len(CASE_5_SUBIDS):
+        raise ValueError(
+            f"Case 5 expects {len(CASE_5_SUBIDS)} alpha values in config, got {len(alpha_values)}"
+        )
+    sub_to_alpha = dict(zip(CASE_5_SUBIDS, alpha_values))
+    if "5" in experiment_ids:
+        return list(alpha_values)
+    return [sub_to_alpha[sid] for sid in CASE_5_SUBIDS if sid in experiment_ids]
+
+
 def _parse_experiment_selection(argv: List[str]) -> set[str]:
     """
     Parse selected experiment ids from CLI args.
@@ -417,7 +485,7 @@ def _parse_experiment_selection(argv: List[str]) -> set[str]:
       python3 run_requested_experiments.py all
     """
     if not argv or "all" in {arg.lower() for arg in argv}:
-        return set(VALID_EXPERIMENT_IDS)
+        return set(ALL_EXPERIMENT_IDS)
 
     selected = {arg.lower() for arg in argv}
     unknown = sorted(selected - VALID_EXPERIMENT_IDS)
@@ -433,9 +501,11 @@ def run_selected(
     experiment_ids: set[str],
     num_samples: int = DEFAULT_NUM_SAMPLES,
     num_trials: int = DEFAULT_NUM_TRIALS,
+    utility_type: str = "normal",
 ) -> None:
     """Run only selected experiments and save plots."""
-    cfg = define_experiments()
+    _set_request_paths(utility_type)
+    cfg = define_experiments(utility_type)
     _ensure_output_dir()
 
     # 1) Base case variants
@@ -639,10 +709,11 @@ def run_selected(
         )
 
     # 5) Alpha constant, m and budget increase
-    if "5" in experiment_ids:
-        mcfg = cfg["alpha_constant_m_budget_increase"]
+    mcfg = cfg["alpha_constant_m_budget_increase"]
+    case5_alphas = _case_5_alphas_to_run(experiment_ids, mcfg["alpha_values"])
+    if case5_alphas:
         print("[Case 5] Alpha constant with increasing m and budget")
-        for alpha in mcfg["alpha_values"]:
+        for alpha in case5_alphas:
             raw_nested = run_alpha_constant_m_budget_increase_case(
                 n=mcfg["n"],
                 alpha_values=[alpha],
@@ -685,8 +756,15 @@ def run_selected(
 if __name__ == "__main__":
     # Runtime-oriented defaults; increase for higher statistical precision.
     try:
-        selected = _parse_experiment_selection(sys.argv[1:])
+        utility_type, argv_rest = _parse_run_requested_argv(sys.argv[1:])
+        selected = _parse_experiment_selection(argv_rest)
     except ValueError as exc:
         print(str(exc))
         sys.exit(1)
-    run_selected(selected, num_samples=DEFAULT_NUM_SAMPLES, num_trials=DEFAULT_NUM_TRIALS)
+    print(f"Utility setting: {utility_type}")
+    run_selected(
+        selected,
+        num_samples=DEFAULT_NUM_SAMPLES,
+        num_trials=DEFAULT_NUM_TRIALS,
+        utility_type=utility_type,
+    )
