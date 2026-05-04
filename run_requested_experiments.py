@@ -8,7 +8,7 @@ plots to plots/requested_experiments/. Files are overwritten on reruns.
 import os
 import sys
 import json
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple
 from datetime import datetime
 
 import matplotlib.pyplot as plt
@@ -27,6 +27,7 @@ from experiment_suite import (
 
 OUTPUT_DIR = "plots/requested_experiments"
 DATA_DIR = "data/requested_experiments"
+PREFERENCES_SUBDIR = "agent_preferences"
 
 
 def _paths_for_utility(utility_type: str) -> Tuple[str, str]:
@@ -50,10 +51,27 @@ VALID_EXPERIMENT_IDS = {"1a", "1b", "1c", "2", "3a", "3b", "4", "5", *CASE_5_SUB
 # `all` runs 5a–5c instead of `5` so Case 5 is not executed four times.
 ALL_EXPERIMENT_IDS = VALID_EXPERIMENT_IDS - {"5"}
 
+RULE_COLORS = {
+    "AV": "#1f77b4",
+    "AV/Cost": "#17becf",
+    "Bucket": "#7f7f7f",
+    "GoB": "#e377c2",
+    "GC": "#ff7f0e",
+    "GC + AV": "#e377c2",
+    "GC+AV": "#e377c2",
+    "MES": "#2ca02c",
+    "MES + AV": "#d62728",
+    "MES+AV": "#d62728",
+    "MES+Phragmen": "#bcbd22",
+    "Phragmen": "#9467bd",
+    "PAV": "#8c564b",
+}
+
 
 def _ensure_output_dir() -> None:
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(os.path.join(DATA_DIR, PREFERENCES_SUBDIR), exist_ok=True)
 
 
 def _to_builtin(value):
@@ -70,9 +88,22 @@ def _to_builtin(value):
     return value
 
 
-def _save_simulation_data(case_id: str, params: dict, raw_data: dict) -> None:
+def _save_simulation_data(
+    case_id: str,
+    params: dict,
+    raw_data: dict,
+    utility_type: str,
+    num_samples: int,
+    num_trials: int,
+) -> None:
+    case_label = case_id[4:] if case_id.startswith("case") else case_id
     payload = {
+        "case": case_label,
         "case_id": case_id,
+        "utility_type": utility_type,
+        "num_samples": int(num_samples),
+        "num_trials": int(num_trials),
+        "num_trials_x_samples": int(num_samples) * int(num_trials),
         "saved_at": datetime.now().isoformat(timespec="seconds"),
         "params": _to_builtin(params),
         "raw_data": _to_builtin(raw_data),
@@ -81,6 +112,66 @@ def _save_simulation_data(case_id: str, params: dict, raw_data: dict) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
     print(f"Saved simulation data: {path}")
+
+
+def _append_agent_preferences(
+    *,
+    case_id: str,
+    utility_type: str,
+    num_samples: int,
+    num_trials: int,
+    run_id: str,
+    trial: int,
+    context: dict,
+    instance: dict,
+) -> None:
+    case_label = case_id[4:] if case_id.startswith("case") else case_id
+    prefs_path = os.path.join(DATA_DIR, PREFERENCES_SUBDIR, f"{case_id}_agent_preferences.jsonl")
+    record = {
+        "saved_at": datetime.now().isoformat(timespec="seconds"),
+        "run_id": run_id,
+        "case": case_label,
+        "case_id": case_id,
+        "utility_type": utility_type,
+        "num_samples": int(num_samples),
+        "num_trials": int(num_trials),
+        "num_trials_x_samples": int(num_samples) * int(num_trials),
+        "trial": int(trial),
+        "context": _to_builtin(context),
+        # Keep instance generation artifacts independent from voting-rule outputs,
+        # so additional rules can be evaluated later on the exact same instances.
+        "instance": _to_builtin(instance),
+    }
+    with open(prefs_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record))
+        f.write("\n")
+
+
+def _build_trial_instance_callback(
+    *,
+    enabled: bool,
+    case_id: str,
+    utility_type: str,
+    num_samples: int,
+    num_trials: int,
+    run_id: str,
+) -> Callable[[dict, int, dict], None] | None:
+    if not enabled:
+        return None
+
+    def _callback(context: dict, trial: int, instance: dict) -> None:
+        _append_agent_preferences(
+            case_id=case_id,
+            utility_type=utility_type,
+            num_samples=num_samples,
+            num_trials=num_trials,
+            run_id=run_id,
+            trial=trial,
+            context=context,
+            instance=instance,
+        )
+
+    return _callback
 
 
 def _summarize(per_rule: Dict[str, List[float]]) -> Tuple[Dict[str, float], Dict[str, float]]:
@@ -100,10 +191,20 @@ def _plot_curve(
 ) -> None:
     plt.figure(figsize=(11, 7))
     for rule, y_values in y_by_rule.items():
+        color = RULE_COLORS.get(rule, "black")
         if show_std and std_by_rule is not None:
-            plt.errorbar(x_values, y_values, yerr=std_by_rule[rule], marker="o", linewidth=2, capsize=4, label=rule)
+            plt.errorbar(
+                x_values,
+                y_values,
+                yerr=std_by_rule[rule],
+                marker="o",
+                linewidth=2,
+                capsize=4,
+                color=color,
+                label=rule,
+            )
         else:
-            plt.plot(x_values, y_values, marker="o", linewidth=2, label=rule)
+            plt.plot(x_values, y_values, marker="o", linewidth=2, color=color, label=rule)
 
     plt.axhline(y=1.0, color="red", linestyle="--", alpha=0.5)
     plt.xlabel(x_label)
@@ -142,6 +243,7 @@ def _plot_case_3a_rule_panels(
         ax = axes[idx]
         means = mean_by_rule[rule]
         stds = std_by_rule[rule]
+        color = RULE_COLORS.get(rule, "black")
         ax.errorbar(
             alpha_values,
             means,
@@ -153,7 +255,7 @@ def _plot_case_3a_rule_panels(
             capthick=1.5,
             elinewidth=1.5,
             alpha=0.4,
-            color="#1f77b4",
+            color=color,
             label=rule,
         )
         ax.lines[-1].set_alpha(1.0)
@@ -175,7 +277,7 @@ def _plot_case_3a_rule_panels(
         axes[idx].axis("off")
 
     plt.suptitle(
-        f"Case 3a: Rule-wise Performance vs Alpha (fixed budget={budget})",
+        f"Rule-wise Performance vs Alpha (fixed budget={budget})",
         fontsize=26,
         fontweight="bold",
         y=0.995,
@@ -194,10 +296,12 @@ def run_all(
     num_samples: int = DEFAULT_NUM_SAMPLES,
     num_trials: int = DEFAULT_NUM_TRIALS,
     utility_type: str = "normal",
+    save_agent_preferences: bool = False,
 ) -> None:
     _set_request_paths(utility_type)
     cfg = define_experiments(utility_type)
     _ensure_output_dir()
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # 1) Base case: n-scaling for each (alpha, budget) setting
     base = cfg["base_case_n_scaling"]
@@ -222,8 +326,23 @@ def run_all(
             utility_type=base["utility_type"],
             num_samples=case_num_samples,
             num_trials=case_num_trials,
+            trial_instance_callback=_build_trial_instance_callback(
+                enabled=save_agent_preferences,
+                case_id=f"case1{label}",
+                utility_type=utility_type,
+                num_samples=case_num_samples,
+                num_trials=case_num_trials,
+                run_id=run_id,
+            ),
         )
-        _save_simulation_data(case_id=f"case1{label}", params=setting, raw_data=raw)
+        _save_simulation_data(
+            case_id=f"case1{label}",
+            params=setting,
+            raw_data=raw,
+            utility_type=utility_type,
+            num_samples=case_num_samples,
+            num_trials=case_num_trials,
+        )
         rules = list(next(iter(raw.values())).keys())
         means = {rule: [] for rule in rules}
         stds = {rule: [] for rule in rules}
@@ -239,10 +358,10 @@ def run_all(
             show_std=True,
             x_label="Number of Agents (n)",
             title=(
-                f"Case 1{label}: Performance vs n (Cambridge PB11 costs, budget={budget}, "
+                f"Performance vs n (Cambridge PB11 costs, budget={budget}, "
                 f"samples={case_num_samples}, trials={case_num_trials})"
                 if is_case_1c
-                else f"Case 1{label}: Performance vs n (alpha={alpha}, budget={budget})"
+                else f"Performance vs n (alpha={alpha}, budget={budget})"
             ),
             filename=(
                 f"case1{label}_cambridge_pb11_budget{int(budget)}_s{case_num_samples}_t{case_num_trials}.png"
@@ -263,8 +382,23 @@ def run_all(
         utility_type=bcfg["utility_type"],
         num_samples=num_samples,
         num_trials=num_trials,
+        trial_instance_callback=_build_trial_instance_callback(
+            enabled=save_agent_preferences,
+            case_id="case2",
+            utility_type=utility_type,
+            num_samples=num_samples,
+            num_trials=num_trials,
+            run_id=run_id,
+        ),
     )
-    _save_simulation_data(case_id="case2", params=bcfg, raw_data=raw)
+    _save_simulation_data(
+        case_id="case2",
+        params=bcfg,
+        raw_data=raw,
+        utility_type=utility_type,
+        num_samples=num_samples,
+        num_trials=num_trials,
+    )
     budgets = bcfg["budget_values"]
     rules = list(next(iter(raw.values())).keys())
     means = {rule: [] for rule in rules}
@@ -280,7 +414,7 @@ def run_all(
         std_by_rule=stds,
         show_std=True,
         x_label="Budget",
-        title=f"Case 2: Performance vs Budget (alpha={bcfg['alpha']})",
+        title=f"Performance vs Budget (alpha={bcfg['alpha']})",
         filename=f"case2_budget_increase_alpha20_s{num_samples}_t{num_trials}.png",
     )
 
@@ -296,8 +430,23 @@ def run_all(
         utility_type=acfg["utility_type"],
         num_samples=num_samples,
         num_trials=num_trials,
+        trial_instance_callback=_build_trial_instance_callback(
+            enabled=save_agent_preferences,
+            case_id="case3a",
+            utility_type=utility_type,
+            num_samples=num_samples,
+            num_trials=num_trials,
+            run_id=run_id,
+        ),
     )
-    _save_simulation_data(case_id="case3a", params=acfg, raw_data=raw)
+    _save_simulation_data(
+        case_id="case3a",
+        params=acfg,
+        raw_data=raw,
+        utility_type=utility_type,
+        num_samples=num_samples,
+        num_trials=num_trials,
+    )
     alphas = acfg["alpha_values"]
     rules = list(next(iter(raw.values())).keys())
     means = {rule: [] for rule in rules}
@@ -313,7 +462,7 @@ def run_all(
         std_by_rule=stds,
         show_std=True,
         x_label="Alpha",
-        title=f"Case 3a: Performance vs Alpha (fixed budget={acfg['budget']})",
+        title=f"Performance vs Alpha (fixed budget={acfg['budget']})",
         filename=f"case3a_alpha_increase_fixed_budget40_s{num_samples}_t{num_trials}.png",
     )
 
@@ -330,12 +479,23 @@ def run_all(
             utility_type=rcfg["utility_type"],
             num_samples=num_samples,
             num_trials=num_trials,
+            trial_instance_callback=_build_trial_instance_callback(
+                enabled=save_agent_preferences,
+                case_id=f"case3b_ratio_{str(ratio).replace('.', 'p')}",
+                utility_type=utility_type,
+                num_samples=num_samples,
+                num_trials=num_trials,
+                run_id=run_id,
+            ),
         )
         raw = raw_nested[ratio]
         _save_simulation_data(
             case_id=f"case3b_ratio_{str(ratio).replace('.', 'p')}",
             params={"ratio": ratio, **rcfg},
             raw_data=raw,
+            utility_type=utility_type,
+            num_samples=num_samples,
+            num_trials=num_trials,
         )
         alphas = rcfg["alpha_values"]
         rules = list(next(iter(raw.values())).keys())
@@ -353,7 +513,7 @@ def run_all(
             std_by_rule=stds,
             show_std=True,
             x_label="Alpha",
-            title=f"Case 3b: Performance vs Alpha (budget/(alpha+1)={ratio:.4f})",
+            title=f"Performance vs Alpha (budget/(alpha+1)={ratio:.4f})",
             filename=f"case3b_alpha_increase_ratio_{ratio_tag}_s{num_samples}_t{num_trials}.png",
         )
 
@@ -370,8 +530,23 @@ def run_all(
         utility_type=scfg["utility_type"],
         num_samples=num_samples,
         num_trials=num_trials,
+        trial_instance_callback=_build_trial_instance_callback(
+            enabled=save_agent_preferences,
+            case_id="case4",
+            utility_type=utility_type,
+            num_samples=num_samples,
+            num_trials=num_trials,
+            run_id=run_id,
+        ),
     )
-    _save_simulation_data(case_id="case4", params=scfg, raw_data=raw)
+    _save_simulation_data(
+        case_id="case4",
+        params=scfg,
+        raw_data=raw,
+        utility_type=utility_type,
+        num_samples=num_samples,
+        num_trials=num_trials,
+    )
     type_counts = scfg["num_types_values"]
     rules = list(next(iter(raw.values())).keys())
     means = {rule: [] for rule in rules}
@@ -387,7 +562,7 @@ def run_all(
         std_by_rule=stds,
         show_std=True,
         x_label="Number of Agent Types",
-        title=f"Case 4: Signal Types (alpha={scfg['alpha']}, budget={scfg['budget']})",
+        title=f"Signal Types (alpha={scfg['alpha']}, budget={scfg['budget']})",
         filename=f"case4_signal_types_s{num_samples}_t{num_trials}.png",
     )
 
@@ -404,12 +579,23 @@ def run_all(
             utility_type=mcfg["utility_type"],
             num_samples=num_samples,
             num_trials=num_trials,
+            trial_instance_callback=_build_trial_instance_callback(
+                enabled=save_agent_preferences,
+                case_id=f"case5_alpha_{int(alpha)}",
+                utility_type=utility_type,
+                num_samples=num_samples,
+                num_trials=num_trials,
+                run_id=run_id,
+            ),
         )
         raw = raw_nested[alpha]
         _save_simulation_data(
             case_id=f"case5_alpha_{int(alpha)}",
             params={"alpha": alpha, **mcfg},
             raw_data=raw,
+            utility_type=utility_type,
+            num_samples=num_samples,
+            num_trials=num_trials,
         )
         # m crosses the PAV inclusion threshold (<=12), so keep only rules
         # that are present for every (m, budget) point to avoid KeyError.
@@ -427,22 +613,23 @@ def run_all(
             std_by_rule=stds,
             show_std=True,
             x_label="Number of Projects (m)",
-            title=f"Case 5: Performance vs m (alpha={alpha}, budget scales with m)",
+            title=f"Performance vs m (alpha={alpha}, budget scales with m)",
             filename=f"case5_alpha{int(alpha)}_m_budget_scaling_s{num_samples}_t{num_trials}.png",
         )
 
     print(f"All requested plots saved in: {OUTPUT_DIR}")
 
 
-def _parse_run_requested_argv(argv: List[str]) -> Tuple[str, List[str]]:
+def _parse_run_requested_argv(argv: List[str]) -> Tuple[str, bool, List[str]]:
     """
-    Strip --utility and return (utility_type, remaining args for experiment ids).
+    Strip known flags and return (utility_type, save_agent_preferences, experiment ids).
 
     Examples:
       python3 run_requested_experiments.py 1a --utility cost_proportional
       python3 run_requested_experiments.py all --utility cost_proportional
     """
     utility_type = "normal"
+    save_agent_preferences = False
     rest: List[str] = []
     i = 0
     while i < len(argv):
@@ -452,13 +639,17 @@ def _parse_run_requested_argv(argv: List[str]) -> Tuple[str, List[str]]:
             utility_type = argv[i + 1]
             i += 2
             continue
+        if argv[i] == "--save-agent-preferences":
+            save_agent_preferences = True
+            i += 1
+            continue
         rest.append(argv[i])
         i += 1
     if utility_type not in ("normal", "cost_proportional"):
         raise ValueError(
             f"Invalid --utility {utility_type!r}; use normal or cost_proportional."
         )
-    return utility_type, rest
+    return utility_type, save_agent_preferences, rest
 
 
 def _case_5_alphas_to_run(experiment_ids: set[str], alpha_values: List[float]) -> List[float]:
@@ -502,11 +693,13 @@ def run_selected(
     num_samples: int = DEFAULT_NUM_SAMPLES,
     num_trials: int = DEFAULT_NUM_TRIALS,
     utility_type: str = "normal",
+    save_agent_preferences: bool = False,
 ) -> None:
     """Run only selected experiments and save plots."""
     _set_request_paths(utility_type)
     cfg = define_experiments(utility_type)
     _ensure_output_dir()
+    run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # 1) Base case variants
     if any(case in experiment_ids for case in {"1a", "1b", "1c"}):
@@ -535,8 +728,23 @@ def run_selected(
                 utility_type=base["utility_type"],
                 num_samples=case_num_samples,
                 num_trials=case_num_trials,
+                trial_instance_callback=_build_trial_instance_callback(
+                    enabled=save_agent_preferences,
+                    case_id=f"case{case_id}",
+                    utility_type=utility_type,
+                    num_samples=case_num_samples,
+                    num_trials=case_num_trials,
+                    run_id=run_id,
+                ),
             )
-            _save_simulation_data(case_id=f"case{case_id}", params=setting, raw_data=raw)
+            _save_simulation_data(
+                case_id=f"case{case_id}",
+                params=setting,
+                raw_data=raw,
+                utility_type=utility_type,
+                num_samples=case_num_samples,
+                num_trials=case_num_trials,
+            )
             rules = list(next(iter(raw.values())).keys())
             means = {rule: [] for rule in rules}
             stds = {rule: [] for rule in rules}
@@ -552,10 +760,10 @@ def run_selected(
                 show_std=True,
                 x_label="Number of Agents (n)",
                 title=(
-                    f"Case {case_id}: Performance vs n (Cambridge PB11 costs, budget={budget}, "
+                    f"Performance vs n (Cambridge PB11 costs, budget={budget}, "
                     f"samples={case_num_samples}, trials={case_num_trials})"
                     if is_case_1c
-                    else f"Case {case_id}: Performance vs n (alpha={alpha}, budget={budget})"
+                    else f"Performance vs n (alpha={alpha}, budget={budget})"
                 ),
                 filename=(
                     f"case1{label}_cambridge_pb11_budget{int(budget)}_s{case_num_samples}_t{case_num_trials}.png"
@@ -577,8 +785,23 @@ def run_selected(
             utility_type=bcfg["utility_type"],
             num_samples=num_samples,
             num_trials=num_trials,
+            trial_instance_callback=_build_trial_instance_callback(
+                enabled=save_agent_preferences,
+                case_id="case2",
+                utility_type=utility_type,
+                num_samples=num_samples,
+                num_trials=num_trials,
+                run_id=run_id,
+            ),
         )
-        _save_simulation_data(case_id="case2", params=bcfg, raw_data=raw)
+        _save_simulation_data(
+            case_id="case2",
+            params=bcfg,
+            raw_data=raw,
+            utility_type=utility_type,
+            num_samples=num_samples,
+            num_trials=num_trials,
+        )
         budgets = bcfg["budget_values"]
         rules = list(next(iter(raw.values())).keys())
         means = {rule: [] for rule in rules}
@@ -594,7 +817,7 @@ def run_selected(
             std_by_rule=stds,
             show_std=True,
             x_label="Budget",
-            title=f"Case 2: Performance vs Budget (alpha={bcfg['alpha']})",
+            title=f"Performance vs Budget (alpha={bcfg['alpha']})",
             filename=f"case2_budget_increase_alpha20_s{num_samples}_t{num_trials}.png",
         )
 
@@ -611,8 +834,23 @@ def run_selected(
             utility_type=acfg["utility_type"],
             num_samples=num_samples,
             num_trials=num_trials,
+            trial_instance_callback=_build_trial_instance_callback(
+                enabled=save_agent_preferences,
+                case_id="case3a",
+                utility_type=utility_type,
+                num_samples=num_samples,
+                num_trials=num_trials,
+                run_id=run_id,
+            ),
         )
-        _save_simulation_data(case_id="case3a", params=acfg, raw_data=raw)
+        _save_simulation_data(
+            case_id="case3a",
+            params=acfg,
+            raw_data=raw,
+            utility_type=utility_type,
+            num_samples=num_samples,
+            num_trials=num_trials,
+        )
         alphas = acfg["alpha_values"]
         rules = list(next(iter(raw.values())).keys())
         means = {rule: [] for rule in rules}
@@ -628,7 +866,7 @@ def run_selected(
             std_by_rule=stds,
             show_std=True,
             x_label="Alpha",
-            title=f"Case 3a: Performance vs Alpha (fixed budget={acfg['budget']})",
+            title=f"Performance vs Alpha (fixed budget={acfg['budget']})",
             filename=f"case3a_alpha_increase_fixed_budget40_s{num_samples}_t{num_trials}.png",
         )
 
@@ -646,12 +884,23 @@ def run_selected(
                 utility_type=rcfg["utility_type"],
                 num_samples=num_samples,
                 num_trials=num_trials,
+                trial_instance_callback=_build_trial_instance_callback(
+                    enabled=save_agent_preferences,
+                    case_id=f"case3b_ratio_{str(ratio).replace('.', 'p')}",
+                    utility_type=utility_type,
+                    num_samples=num_samples,
+                    num_trials=num_trials,
+                    run_id=run_id,
+                ),
             )
             raw = raw_nested[ratio]
             _save_simulation_data(
                 case_id=f"case3b_ratio_{str(ratio).replace('.', 'p')}",
                 params={"ratio": ratio, **rcfg},
                 raw_data=raw,
+                utility_type=utility_type,
+                num_samples=num_samples,
+                num_trials=num_trials,
             )
             alphas = rcfg["alpha_values"]
             rules = list(next(iter(raw.values())).keys())
@@ -669,7 +918,7 @@ def run_selected(
                 std_by_rule=stds,
                 show_std=True,
                 x_label="Alpha",
-                title=f"Case 3b: Performance vs Alpha (budget/(alpha+1)={ratio:.4f})",
+                title=f"Performance vs Alpha (budget/(alpha+1)={ratio:.4f})",
                 filename=f"case3b_alpha_increase_ratio_{ratio_tag}_s{num_samples}_t{num_trials}.png",
             )
 
@@ -687,8 +936,23 @@ def run_selected(
             utility_type=scfg["utility_type"],
             num_samples=num_samples,
             num_trials=num_trials,
+            trial_instance_callback=_build_trial_instance_callback(
+                enabled=save_agent_preferences,
+                case_id="case4",
+                utility_type=utility_type,
+                num_samples=num_samples,
+                num_trials=num_trials,
+                run_id=run_id,
+            ),
         )
-        _save_simulation_data(case_id="case4", params=scfg, raw_data=raw)
+        _save_simulation_data(
+            case_id="case4",
+            params=scfg,
+            raw_data=raw,
+            utility_type=utility_type,
+            num_samples=num_samples,
+            num_trials=num_trials,
+        )
         type_counts = scfg["num_types_values"]
         rules = list(next(iter(raw.values())).keys())
         means = {rule: [] for rule in rules}
@@ -704,7 +968,7 @@ def run_selected(
             std_by_rule=stds,
             show_std=True,
             x_label="Number of Agent Types",
-            title=f"Case 4: Signal Types (alpha={scfg['alpha']}, budget={scfg['budget']})",
+            title=f"Signal Types (alpha={scfg['alpha']}, budget={scfg['budget']})",
             filename=f"case4_signal_types_s{num_samples}_t{num_trials}.png",
         )
 
@@ -723,12 +987,23 @@ def run_selected(
                 utility_type=mcfg["utility_type"],
                 num_samples=num_samples,
                 num_trials=num_trials,
+                trial_instance_callback=_build_trial_instance_callback(
+                    enabled=save_agent_preferences,
+                    case_id=f"case5_alpha_{int(alpha)}",
+                    utility_type=utility_type,
+                    num_samples=num_samples,
+                    num_trials=num_trials,
+                    run_id=run_id,
+                ),
             )
             raw = raw_nested[alpha]
             _save_simulation_data(
                 case_id=f"case5_alpha_{int(alpha)}",
                 params={"alpha": alpha, **mcfg},
                 raw_data=raw,
+                utility_type=utility_type,
+                num_samples=num_samples,
+                num_trials=num_trials,
             )
             # m crosses the PAV inclusion threshold (<=12), so keep only rules
             # that are present for every (m, budget) point to avoid KeyError.
@@ -746,7 +1021,7 @@ def run_selected(
                 std_by_rule=stds,
                 show_std=True,
                 x_label="Number of Projects (m)",
-                title=f"Case 5: Performance vs m (alpha={alpha}, budget scales with m)",
+                title=f"Performance vs m (alpha={alpha}, budget scales with m)",
                 filename=f"case5_alpha{int(alpha)}_m_budget_scaling_s{num_samples}_t{num_trials}.png",
             )
 
@@ -756,15 +1031,17 @@ def run_selected(
 if __name__ == "__main__":
     # Runtime-oriented defaults; increase for higher statistical precision.
     try:
-        utility_type, argv_rest = _parse_run_requested_argv(sys.argv[1:])
+        utility_type, save_agent_preferences, argv_rest = _parse_run_requested_argv(sys.argv[1:])
         selected = _parse_experiment_selection(argv_rest)
     except ValueError as exc:
         print(str(exc))
         sys.exit(1)
     print(f"Utility setting: {utility_type}")
+    print(f"Save agent preferences: {save_agent_preferences}")
     run_selected(
         selected,
         num_samples=DEFAULT_NUM_SAMPLES,
         num_trials=DEFAULT_NUM_TRIALS,
         utility_type=utility_type,
+        save_agent_preferences=save_agent_preferences,
     )

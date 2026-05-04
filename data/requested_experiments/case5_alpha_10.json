@@ -4936,5 +4936,10 @@
         0.9740596627756161
       ]
     }
-  }
+  },
+  "case": "5_alpha_10",
+  "utility_type": "normal",
+  "num_samples": 100,
+  "num_trials": 100,
+  "num_trials_x_samples": 10000
 }

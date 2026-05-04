@@ -630,5 +630,10 @@
         0.8333333333333334
       ]
     }
-  }
+  },
+  "case": "1c",
+  "utility_type": "normal",
+  "num_samples": 100,
+  "num_trials": 100,
+  "num_trials_x_samples": 10000
 }

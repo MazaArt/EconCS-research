@@ -6159,5 +6159,10 @@
         0.9999999999984375
       ]
     }
-  }
+  },
+  "case": "3b_ratio_0p6666666666666666",
+  "utility_type": "normal",
+  "num_samples": 100,
+  "num_trials": 100,
+  "num_trials_x_samples": 10000
 }

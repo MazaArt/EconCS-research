@@ -5130,5 +5130,10 @@
         0.9137778412335152
       ]
     }
-  }
+  },
+  "case": "4",
+  "utility_type": "cost_proportional",
+  "num_samples": 100,
+  "num_trials": 100,
+  "num_trials_x_samples": 10000
 }

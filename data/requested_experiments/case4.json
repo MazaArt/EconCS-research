@@ -5130,5 +5130,10 @@
         0.9385245901637421
       ]
     }
-  }
+  },
+  "case": "4",
+  "utility_type": "normal",
+  "num_samples": 100,
+  "num_trials": 100,
+  "num_trials_x_samples": 10000
 }

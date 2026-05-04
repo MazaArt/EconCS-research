@@ -8,7 +8,7 @@ functions to run them with the existing simulation engine.
 from __future__ import annotations
 
 import numpy as np
-from typing import Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 from simulation import (
     approval_voting,
@@ -276,6 +276,7 @@ def run_signal_type_case(
     utility_type: str = "normal",
     num_samples: int = 30,
     num_trials: int = 20,
+    trial_instance_callback: Callable[[dict, int, dict], None] | None = None,
 ) -> Dict[int, Dict[str, List[float]]]:
     """Run the signal-type experiment for num_types in {1,2,3,4,5}."""
     if num_types_values is None:
@@ -296,6 +297,8 @@ def run_signal_type_case(
                 num_types=num_types,
                 seed=trial,
             )
+            if trial_instance_callback is not None:
+                trial_instance_callback({"num_types": num_types}, trial, instance)
             row = _run_single_instance(
                 instance=instance,
                 utility_type=utility_type,
@@ -320,6 +323,7 @@ def run_base_case_n_scaling(
     utility_type: str = "normal",
     num_samples: int = 30,
     num_trials: int = 20,
+    trial_instance_callback: Callable[[dict, int, dict], None] | None = None,
 ) -> Dict[int, Dict[str, List[float]]]:
     """Run one base-case setting while increasing n."""
     aggregated: Dict[int, Dict[str, List[float]]] = {}
@@ -345,6 +349,8 @@ def run_base_case_n_scaling(
             if fixed_costs is not None:
                 instance["costs"] = np.array(fixed_costs, dtype=float) / scale
                 instance["m"] = m_effective
+            if trial_instance_callback is not None:
+                trial_instance_callback({"n": n}, trial, instance)
             row = _run_single_instance(instance, utility_type, num_samples, m_effective)
             for rule_name, value in row.items():
                 per_rule[rule_name].append(value)
@@ -361,6 +367,7 @@ def run_budget_increase_case(
     utility_type: str = "normal",
     num_samples: int = 30,
     num_trials: int = 20,
+    trial_instance_callback: Callable[[dict, int, dict], None] | None = None,
 ) -> Dict[float, Dict[str, List[float]]]:
     """Run fixed-alpha experiment while increasing budget."""
     aggregated: Dict[float, Dict[str, List[float]]] = {}
@@ -369,6 +376,8 @@ def run_budget_increase_case(
         per_rule = {name: [] for name in rules}
         for trial in range(num_trials):
             instance = generate_instance(n, m, alpha, budget, quality_range, seed=trial)
+            if trial_instance_callback is not None:
+                trial_instance_callback({"budget": budget}, trial, instance)
             row = _run_single_instance(instance, utility_type, num_samples, m)
             for rule_name, value in row.items():
                 per_rule[rule_name].append(value)
@@ -385,6 +394,7 @@ def run_alpha_increase_fixed_budget_case(
     utility_type: str = "normal",
     num_samples: int = 30,
     num_trials: int = 20,
+    trial_instance_callback: Callable[[dict, int, dict], None] | None = None,
 ) -> Dict[float, Dict[str, List[float]]]:
     """Run fixed-budget experiment while increasing alpha."""
     aggregated: Dict[float, Dict[str, List[float]]] = {}
@@ -393,6 +403,8 @@ def run_alpha_increase_fixed_budget_case(
         per_rule = {name: [] for name in rules}
         for trial in range(num_trials):
             instance = generate_instance(n, m, alpha, budget, quality_range, seed=trial)
+            if trial_instance_callback is not None:
+                trial_instance_callback({"alpha": alpha}, trial, instance)
             row = _run_single_instance(instance, utility_type, num_samples, m)
             for rule_name, value in row.items():
                 per_rule[rule_name].append(value)
@@ -409,6 +421,7 @@ def run_alpha_increase_constant_ratio_case(
     utility_type: str = "normal",
     num_samples: int = 30,
     num_trials: int = 20,
+    trial_instance_callback: Callable[[dict, int, dict], None] | None = None,
 ) -> Dict[float, Dict[float, Dict[str, List[float]]]]:
     """
     Run alpha-increase experiments while preserving budget/(alpha+1)=ratio.
@@ -424,6 +437,8 @@ def run_alpha_increase_constant_ratio_case(
             per_rule = {name: [] for name in rules}
             for trial in range(num_trials):
                 instance = generate_instance(n, m, alpha, budget, quality_range, seed=trial)
+                if trial_instance_callback is not None:
+                    trial_instance_callback({"ratio": ratio, "alpha": alpha}, trial, instance)
                 row = _run_single_instance(instance, utility_type, num_samples, m)
                 for rule_name, value in row.items():
                     per_rule[rule_name].append(value)
@@ -440,6 +455,7 @@ def run_alpha_constant_m_budget_increase_case(
     utility_type: str = "normal",
     num_samples: int = 30,
     num_trials: int = 20,
+    trial_instance_callback: Callable[[dict, int, dict], None] | None = None,
 ) -> Dict[float, Dict[Tuple[int, float], Dict[str, List[float]]]]:
     """Run alpha-constant case while (m, budget) scale together."""
     if len(m_values) != len(budget_values):
@@ -453,6 +469,8 @@ def run_alpha_constant_m_budget_increase_case(
             per_rule = {name: [] for name in rules}
             for trial in range(num_trials):
                 instance = generate_instance(n, m, alpha, budget, quality_range, seed=trial)
+                if trial_instance_callback is not None:
+                    trial_instance_callback({"alpha": alpha, "m": m, "budget": budget}, trial, instance)
                 row = _run_single_instance(instance, utility_type, num_samples, m)
                 for rule_name, value in row.items():
                     per_rule[rule_name].append(value)

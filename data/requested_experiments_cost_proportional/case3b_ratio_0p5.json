@@ -6159,5 +6159,10 @@
         0.9833277631888357
       ]
     }
-  }
+  },
+  "case": "3b_ratio_0p5",
+  "utility_type": "cost_proportional",
+  "num_samples": 100,
+  "num_trials": 100,
+  "num_trials_x_samples": 10000
 }
