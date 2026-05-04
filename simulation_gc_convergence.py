@@ -17,6 +17,7 @@ from simulation import (
     approval_voting, approval_voting_per_cost, greedy_cover,
     method_of_equal_shares, mes_plus_av, mes_plus_phragmen, phragmen,
     proportional_approval_voting,
+    local_search_pav,
     calculate_informed_ratio, generate_instance
 )
 
@@ -53,7 +54,8 @@ def run_gc_convergence_analysis(n_values: List[int], m: int, alpha: float,
         'Phragmen': phragmen
     }
     if m <= 12:
-        voting_rules['PAV'] = proportional_approval_voting
+        voting_rules['seq-PAV'] = proportional_approval_voting
+        voting_rules['ls-PAV'] = local_search_pav
     
     results = {
         rule: {

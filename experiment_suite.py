@@ -19,6 +19,7 @@ from simulation import (
     method_of_equal_shares,
     mes_plus_av,
     mes_plus_phragmen,
+    local_search_pav,
     phragmen,
     proportional_approval_voting,
     calculate_informed_ratio,
@@ -40,7 +41,8 @@ def _voting_rules(m: int):
         "Phragmen": phragmen,
     }
     if m <= 12:
-        rules["PAV"] = proportional_approval_voting
+        rules["seq-PAV"] = proportional_approval_voting
+        rules["ls-PAV"] = local_search_pav
     return rules
 
 

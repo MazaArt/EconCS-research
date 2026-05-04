@@ -1,7 +1,7 @@
 """
 Simulation for Informed Participatory Budgeting
 
-This module implements voting rules (AV, PAV, Greedy Cover, MES, Phragmen),
+This module implements voting rules (AV, seq-PAV, ls-PAV, Greedy Cover, MES, Phragmen),
 simulates PB instances, and calculates performance (ratio to optimal knapsack).
 """
 
@@ -168,7 +168,7 @@ def greedy_or_breakpoint_rule(votes: np.ndarray, costs: np.ndarray, budget: floa
 
 def proportional_approval_voting(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
     """
-    PAV (Sequential Greedy): Iteratively select alternative with highest marginal PAV gain.
+    seq-PAV (Sequential Greedy): Iteratively select alternative with highest marginal PAV gain.
     
     PAV score = sum over agents of (1 + 1/2 + ... + 1/k) for k approved winners.
     
@@ -215,6 +215,67 @@ def proportional_approval_voting(votes: np.ndarray, costs: np.ndarray, budget: f
                 approved_winners[i] += 1
     
     return winning_set
+
+
+def local_search_pav(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
+    """
+    ls-PAV: 1-swap local-search heuristic for budgeted PAV.
+
+    Start from AV and repeatedly apply improving single-item swaps
+    (remove one selected project, add one unselected project) while preserving
+    budget feasibility.
+    """
+    n, m = votes.shape
+    if m == 0:
+        return set()
+
+    harmonic = np.zeros(m + 1, dtype=float)
+    for k in range(1, m + 1):
+        harmonic[k] = harmonic[k - 1] + 1.0 / k
+
+    def pav_score(winners: Set[int]) -> float:
+        if not winners:
+            return 0.0
+        winner_idx = list(winners)
+        approved_counts = votes[:, winner_idx].sum(axis=1).astype(int)
+        return float(np.sum(harmonic[approved_counts]))
+
+    winners = set(approval_voting(votes, costs, budget))
+    current_cost = float(sum(costs[j] for j in winners))
+    current_score = pav_score(winners)
+
+    improved = True
+    while improved:
+        improved = False
+        best_swap = None
+        best_score = current_score
+
+        selected = list(winners)
+        not_selected = [j for j in range(m) if j not in winners]
+
+        for out_j in selected:
+            cost_without = current_cost - float(costs[out_j])
+            for in_j in not_selected:
+                new_cost = cost_without + float(costs[in_j])
+                if new_cost > budget + 1e-9:
+                    continue
+                candidate = set(winners)
+                candidate.remove(out_j)
+                candidate.add(in_j)
+                score = pav_score(candidate)
+                if score > best_score + 1e-12:
+                    best_score = score
+                    best_swap = (out_j, in_j, new_cost)
+
+        if best_swap is not None:
+            out_j, in_j, new_cost = best_swap
+            winners.remove(out_j)
+            winners.add(in_j)
+            current_cost = new_cost
+            current_score = best_score
+            improved = True
+
+    return winners
 
 
 def greedy_cover(votes: np.ndarray, costs: np.ndarray, budget: float) -> Set[int]:
@@ -910,9 +971,10 @@ def run_simulation(n_values: List[int], m: int, alpha: float, budget: float,
         'Phragmen': phragmen
     }
     
-    # Try PAV for small instances
+    # Try PAV variants for small instances
     if m <= 12:
-        voting_rules['PAV'] = proportional_approval_voting
+        voting_rules['seq-PAV'] = proportional_approval_voting
+        voting_rules['ls-PAV'] = local_search_pav
     
     results = {
         rule: {'mean': [], 'std': [], 'all': []}  # Added 'all' to store trial data
@@ -967,7 +1029,8 @@ def plot_results(n_values: List[int], results: dict, title: str = "Performance v
         'MES+AV': {'color': '#d62728', 'marker': 'v', 'linestyle': ':', 'markersize': 8},
         'MES+Phragmen': {'color': '#bcbd22', 'marker': 'P', 'linestyle': '-.', 'markersize': 9},
         'Phragmen': {'color': '#9467bd', 'marker': 'D', 'linestyle': '-', 'markersize': 8},
-        'PAV': {'color': '#8c564b', 'marker': 'p', 'linestyle': '--', 'markersize': 8}
+        'seq-PAV': {'color': '#8c564b', 'marker': 'p', 'linestyle': '--', 'markersize': 8},
+        'ls-PAV': {'color': '#7f3c8d', 'marker': 'h', 'linestyle': '--', 'markersize': 8}
     }
     
     for rule_name in results.keys():

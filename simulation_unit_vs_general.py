@@ -15,7 +15,7 @@ from typing import List, Tuple
 from simulation import (
     approval_voting, approval_voting_per_cost, greedy_cover,
     method_of_equal_shares, mes_plus_av, mes_plus_phragmen, phragmen,
-    proportional_approval_voting, calculate_informed_ratio, generate_instance
+    proportional_approval_voting, local_search_pav, calculate_informed_ratio, generate_instance
 )
 
 
@@ -51,9 +51,10 @@ def run_unit_vs_general_comparison(n_values: List[int], m: int, alpha_values: Li
         'Phragmen': phragmen
     }
     
-    # Try PAV for small instances
+    # Try PAV variants for small instances
     if m <= 12:
-        voting_rules['PAV'] = proportional_approval_voting
+        voting_rules['seq-PAV'] = proportional_approval_voting
+        voting_rules['ls-PAV'] = local_search_pav
     
     results = {
         alpha: {rule: {'mean': [], 'std': [], 'all': []} for rule in voting_rules.keys()}

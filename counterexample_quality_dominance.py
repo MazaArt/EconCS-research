@@ -102,7 +102,8 @@ def run_counterexample(m: int = 8, k: int = 4, n: int = 2000, seed: int = 0) -> 
         "Phragmen": phragmen,
     }
     if m <= 12:
-        rules["PAV"] = proportional_approval_voting
+        rules["seq-PAV"] = proportional_approval_voting
+        rules["ls-PAV"] = local_search_pav
 
     optimal_set, optimal_utility = knapsack_optimal(
         qualities=qualities,
@@ -218,7 +219,8 @@ def run_counterexample_aggregate(
         "Phragmen": phragmen,
     }
     if m <= 12:
-        rules["PAV"] = proportional_approval_voting
+        rules["seq-PAV"] = proportional_approval_voting
+        rules["ls-PAV"] = local_search_pav
 
     optimal_set, optimal_utility = knapsack_optimal(
         qualities=qualities,

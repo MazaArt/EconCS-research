@@ -64,7 +64,8 @@ RULE_COLORS = {
     "MES+AV": "#d62728",
     "MES+Phragmen": "#bcbd22",
     "Phragmen": "#9467bd",
-    "PAV": "#8c564b",
+    "seq-PAV": "#8c564b",
+    "ls-PAV": "#7f3c8d",
 }
 
 

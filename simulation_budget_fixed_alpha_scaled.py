@@ -15,7 +15,7 @@ from typing import List, Tuple
 from simulation import (
     approval_voting, approval_voting_per_cost, greedy_cover,
     method_of_equal_shares, mes_plus_av, mes_plus_phragmen, phragmen,
-    proportional_approval_voting, calculate_informed_ratio, generate_instance
+    proportional_approval_voting, local_search_pav, calculate_informed_ratio, generate_instance
 )
 
 
@@ -55,9 +55,10 @@ def run_alpha_scaled_analysis(n: int, m: int, base_budget: float,
         'Phragmen': phragmen
     }
     
-    # Try PAV for small instances
+    # Try PAV variants for small instances
     if m <= 12:
-        voting_rules['PAV'] = proportional_approval_voting
+        voting_rules['seq-PAV'] = proportional_approval_voting
+        voting_rules['ls-PAV'] = local_search_pav
     
     results = {
         rule: {'mean': [], 'std': [], 'all': []}  # Added 'all' to store trial data
@@ -119,7 +120,8 @@ def plot_alpha_scaled(alpha_values: List[float], results: dict, rule_names: List
         'MES+AV': {'color': '#d62728', 'marker': 'v', 'linestyle': ':', 'markersize': 8},
         'MES+Phragmen': {'color': '#bcbd22', 'marker': 'P', 'linestyle': '-.', 'markersize': 9},
         'Phragmen': {'color': '#9467bd', 'marker': 'D', 'linestyle': '-', 'markersize': 8},
-        'PAV': {'color': '#8c564b', 'marker': 'p', 'linestyle': '--', 'markersize': 8}
+        'seq-PAV': {'color': '#8c564b', 'marker': 'p', 'linestyle': '--', 'markersize': 8},
+        'ls-PAV': {'color': '#7f3c8d', 'marker': 'h', 'linestyle': '--', 'markersize': 8}
     }
     
     for rule_name in rule_names:
