@@ -36,6 +36,8 @@ RULE_COLORS: Dict[str, str] = {
 }
 
 RULE_ALIASES = {"GC + AV": "GC+AV", "MES + AV": "MES+AV"}
+DISPLAY_LABELS = {"seq-PAV": "PAV"}
+EXCLUDED_RULES = {"ls-PAV"}
 
 # Stable preference order for style assignment (aligned with experiment_suite._voting_rules).
 CANONICAL_RULE_ORDER: List[str] = [
@@ -284,6 +286,8 @@ def plot_curve(
 ) -> None:
     plt.figure(figsize=(11, 7))
     for rule in y_by_rule:
+        if _normalize_rule(rule) in EXCLUDED_RULES:
+            continue
         color = RULE_COLORS.get(rule, RULE_COLORS.get(_normalize_rule(rule), "black"))
         marker, linestyle = rule_styles[_normalize_rule(rule)]
         if not vary_linestyles:
@@ -298,7 +302,7 @@ def plot_curve(
             linewidth=2,
             capsize=4,
             color=color,
-            label=rule,
+            label=DISPLAY_LABELS.get(rule, rule),
         )
 
     plt.axhline(y=1.0, color="red", linestyle="--", alpha=0.5)
