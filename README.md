@@ -28,3 +28,7 @@ Parallel run commands (3 parallel), one process per case:
 `printf "1a\n1b\n1c\n2\n3a\n3b\n4\n5\n" | xargs -n 1 -P 3 -I {} python3 run_requested_experiments.py {} --utility cost_proportional`
 `printf "1a\n1b\n1c\n2\n3a\n3b\n4\n5\n" | xargs -n 1 -P 3 -I {} python3 run_requested_experiments.py {} --utility normal --save-agent-preferences`
 `printf "1a\n1b\n1c\n2\n3a\n3b\n4\n5\n" | xargs -n 1 -P 3 -I {} python3 run_requested_experiments.py {} --utility cost_proportional --save-agent-preferences`
+
+To load and plot the data stored in /data/ jsons:
+`python3 plot_requested_experiments_from_data.py`
+`python3 plot_requested_experiments_from_data.py --vary-linestyles` 
