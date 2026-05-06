@@ -89,6 +89,55 @@ def _to_builtin(value):
     return value
 
 
+def _case_data_filename(case_id: str, params: dict) -> str:
+    """
+    Build a descriptive JSON filename for cases that change parameter sweeps.
+    Falls back to legacy naming for other cases.
+    """
+    if case_id == "case2":
+        m = _format_num_for_filename(params["m"])
+        alpha = _format_num_for_filename(params["alpha"])
+        budgets = params.get("budget_values", [])
+        if budgets:
+            b_start = _format_num_for_filename(min(budgets))
+            b_end = _format_num_for_filename(max(budgets))
+            return f"{case_id}_m{m}_a{alpha}_b{b_start}_to_{b_end}.json"
+    if case_id == "case3a":
+        m = _format_num_for_filename(params["m"])
+        budget = _format_num_for_filename(params["budget"])
+        alphas = params.get("alpha_values", [])
+        if alphas:
+            a_start = _format_num_for_filename(min(alphas))
+            a_end = _format_num_for_filename(max(alphas))
+            return f"{case_id}_m{m}_b{budget}_a{a_start}_to_{a_end}.json"
+    return f"{case_id}.json"
+
+
+def _case_preferences_filename(case_id: str, params: dict | None = None) -> str:
+    """
+    Build a descriptive JSONL filename for agent preference dumps.
+    Falls back to legacy naming for other cases.
+    """
+    if params is not None:
+        if case_id == "case2":
+            m = _format_num_for_filename(params["m"])
+            alpha = _format_num_for_filename(params["alpha"])
+            budgets = params.get("budget_values", [])
+            if budgets:
+                b_start = _format_num_for_filename(min(budgets))
+                b_end = _format_num_for_filename(max(budgets))
+                return f"{case_id}_m{m}_a{alpha}_b{b_start}_to_{b_end}_agent_preferences.jsonl"
+        if case_id == "case3a":
+            m = _format_num_for_filename(params["m"])
+            budget = _format_num_for_filename(params["budget"])
+            alphas = params.get("alpha_values", [])
+            if alphas:
+                a_start = _format_num_for_filename(min(alphas))
+                a_end = _format_num_for_filename(max(alphas))
+                return f"{case_id}_m{m}_b{budget}_a{a_start}_to_{a_end}_agent_preferences.jsonl"
+    return f"{case_id}_agent_preferences.jsonl"
+
+
 def _save_simulation_data(
     case_id: str,
     params: dict,
@@ -109,7 +158,7 @@ def _save_simulation_data(
         "params": _to_builtin(params),
         "raw_data": _to_builtin(raw_data),
     }
-    path = os.path.join(DATA_DIR, f"{case_id}.json")
+    path = os.path.join(DATA_DIR, _case_data_filename(case_id, params))
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
     print(f"Saved simulation data: {path}")
@@ -118,6 +167,7 @@ def _save_simulation_data(
 def _append_agent_preferences(
     *,
     case_id: str,
+    preferences_file_name: str,
     utility_type: str,
     num_samples: int,
     num_trials: int,
@@ -127,7 +177,7 @@ def _append_agent_preferences(
     instance: dict,
 ) -> None:
     case_label = case_id[4:] if case_id.startswith("case") else case_id
-    prefs_path = os.path.join(DATA_DIR, PREFERENCES_SUBDIR, f"{case_id}_agent_preferences.jsonl")
+    prefs_path = os.path.join(DATA_DIR, PREFERENCES_SUBDIR, preferences_file_name)
     record = {
         "saved_at": datetime.now().isoformat(timespec="seconds"),
         "run_id": run_id,
@@ -152,6 +202,7 @@ def _build_trial_instance_callback(
     *,
     enabled: bool,
     case_id: str,
+    preferences_file_name: str,
     utility_type: str,
     num_samples: int,
     num_trials: int,
@@ -163,6 +214,7 @@ def _build_trial_instance_callback(
     def _callback(context: dict, trial: int, instance: dict) -> None:
         _append_agent_preferences(
             case_id=case_id,
+            preferences_file_name=preferences_file_name,
             utility_type=utility_type,
             num_samples=num_samples,
             num_trials=num_trials,
@@ -293,6 +345,14 @@ def _set_request_paths(utility_type: str) -> None:
     OUTPUT_DIR, DATA_DIR = _paths_for_utility(utility_type)
 
 
+def _format_num_for_filename(value: float | int) -> str:
+    """Return compact numeric tags for filenames (e.g., 7.0 -> '7', 2.5 -> '2p5')."""
+    as_float = float(value)
+    if as_float.is_integer():
+        return str(int(as_float))
+    return str(as_float).replace(".", "p")
+
+
 def run_all(
     num_samples: int = DEFAULT_NUM_SAMPLES,
     num_trials: int = DEFAULT_NUM_TRIALS,
@@ -330,6 +390,7 @@ def run_all(
             trial_instance_callback=_build_trial_instance_callback(
                 enabled=save_agent_preferences,
                 case_id=f"case1{label}",
+                preferences_file_name=_case_preferences_filename(f"case1{label}"),
                 utility_type=utility_type,
                 num_samples=case_num_samples,
                 num_trials=case_num_trials,
@@ -386,6 +447,7 @@ def run_all(
         trial_instance_callback=_build_trial_instance_callback(
             enabled=save_agent_preferences,
             case_id="case2",
+            preferences_file_name=_case_preferences_filename("case2", bcfg),
             utility_type=utility_type,
             num_samples=num_samples,
             num_trials=num_trials,
@@ -416,7 +478,10 @@ def run_all(
         show_std=True,
         x_label="Budget",
         title=f"Performance vs Budget (alpha={bcfg['alpha']})",
-        filename=f"case2_budget_increase_alpha20_s{num_samples}_t{num_trials}.png",
+        filename=(
+            f"case2_budget_increase_alpha{_format_num_for_filename(bcfg['alpha'])}"
+            f"_s{num_samples}_t{num_trials}.png"
+        ),
     )
 
     # 3a) Alpha increase, fixed budget
@@ -434,6 +499,7 @@ def run_all(
         trial_instance_callback=_build_trial_instance_callback(
             enabled=save_agent_preferences,
             case_id="case3a",
+            preferences_file_name=_case_preferences_filename("case3a", acfg),
             utility_type=utility_type,
             num_samples=num_samples,
             num_trials=num_trials,
@@ -464,7 +530,10 @@ def run_all(
         show_std=True,
         x_label="Alpha",
         title=f"Performance vs Alpha (fixed budget={acfg['budget']})",
-        filename=f"case3a_alpha_increase_fixed_budget40_s{num_samples}_t{num_trials}.png",
+        filename=(
+            f"case3a_alpha_increase_fixed_budget{_format_num_for_filename(acfg['budget'])}"
+            f"_s{num_samples}_t{num_trials}.png"
+        ),
     )
 
     # 3b) Alpha increase, constant ratio budget/(alpha+1)
@@ -483,6 +552,9 @@ def run_all(
             trial_instance_callback=_build_trial_instance_callback(
                 enabled=save_agent_preferences,
                 case_id=f"case3b_ratio_{str(ratio).replace('.', 'p')}",
+                preferences_file_name=_case_preferences_filename(
+                    f"case3b_ratio_{str(ratio).replace('.', 'p')}"
+                ),
                 utility_type=utility_type,
                 num_samples=num_samples,
                 num_trials=num_trials,
@@ -534,6 +606,7 @@ def run_all(
         trial_instance_callback=_build_trial_instance_callback(
             enabled=save_agent_preferences,
             case_id="case4",
+            preferences_file_name=_case_preferences_filename("case4"),
             utility_type=utility_type,
             num_samples=num_samples,
             num_trials=num_trials,
@@ -583,6 +656,7 @@ def run_all(
             trial_instance_callback=_build_trial_instance_callback(
                 enabled=save_agent_preferences,
                 case_id=f"case5_alpha_{int(alpha)}",
+                preferences_file_name=_case_preferences_filename(f"case5_alpha_{int(alpha)}"),
                 utility_type=utility_type,
                 num_samples=num_samples,
                 num_trials=num_trials,
@@ -732,6 +806,7 @@ def run_selected(
                 trial_instance_callback=_build_trial_instance_callback(
                     enabled=save_agent_preferences,
                     case_id=f"case{case_id}",
+                    preferences_file_name=_case_preferences_filename(f"case{case_id}"),
                     utility_type=utility_type,
                     num_samples=case_num_samples,
                     num_trials=case_num_trials,
@@ -789,6 +864,7 @@ def run_selected(
             trial_instance_callback=_build_trial_instance_callback(
                 enabled=save_agent_preferences,
                 case_id="case2",
+                preferences_file_name=_case_preferences_filename("case2", bcfg),
                 utility_type=utility_type,
                 num_samples=num_samples,
                 num_trials=num_trials,
@@ -819,7 +895,10 @@ def run_selected(
             show_std=True,
             x_label="Budget",
             title=f"Performance vs Budget (alpha={bcfg['alpha']})",
-            filename=f"case2_budget_increase_alpha20_s{num_samples}_t{num_trials}.png",
+            filename=(
+                f"case2_budget_increase_alpha{_format_num_for_filename(bcfg['alpha'])}"
+                f"_s{num_samples}_t{num_trials}.png"
+            ),
         )
 
     # 3a) Alpha increase, fixed budget
@@ -838,6 +917,7 @@ def run_selected(
             trial_instance_callback=_build_trial_instance_callback(
                 enabled=save_agent_preferences,
                 case_id="case3a",
+                preferences_file_name=_case_preferences_filename("case3a", acfg),
                 utility_type=utility_type,
                 num_samples=num_samples,
                 num_trials=num_trials,
@@ -868,7 +948,10 @@ def run_selected(
             show_std=True,
             x_label="Alpha",
             title=f"Performance vs Alpha (fixed budget={acfg['budget']})",
-            filename=f"case3a_alpha_increase_fixed_budget40_s{num_samples}_t{num_trials}.png",
+            filename=(
+                f"case3a_alpha_increase_fixed_budget{_format_num_for_filename(acfg['budget'])}"
+                f"_s{num_samples}_t{num_trials}.png"
+            ),
         )
 
     # 3b) Alpha increase, constant ratio budget/(alpha+1)
@@ -888,6 +971,9 @@ def run_selected(
                 trial_instance_callback=_build_trial_instance_callback(
                     enabled=save_agent_preferences,
                     case_id=f"case3b_ratio_{str(ratio).replace('.', 'p')}",
+                    preferences_file_name=_case_preferences_filename(
+                        f"case3b_ratio_{str(ratio).replace('.', 'p')}"
+                    ),
                     utility_type=utility_type,
                     num_samples=num_samples,
                     num_trials=num_trials,
@@ -940,6 +1026,7 @@ def run_selected(
             trial_instance_callback=_build_trial_instance_callback(
                 enabled=save_agent_preferences,
                 case_id="case4",
+                preferences_file_name=_case_preferences_filename("case4"),
                 utility_type=utility_type,
                 num_samples=num_samples,
                 num_trials=num_trials,
@@ -991,6 +1078,7 @@ def run_selected(
                 trial_instance_callback=_build_trial_instance_callback(
                     enabled=save_agent_preferences,
                     case_id=f"case5_alpha_{int(alpha)}",
+                    preferences_file_name=_case_preferences_filename(f"case5_alpha_{int(alpha)}"),
                     utility_type=utility_type,
                     num_samples=num_samples,
                     num_trials=num_trials,

@@ -81,8 +81,8 @@ def define_experiments(utility_type: str = "normal") -> Dict[str, dict]:
         "budget_increase": {
             "n": 100,
             "m": 8,
-            "alpha": 20.0,
-            "budget_values": [20.0, 30.0, 40.0, 50.0],
+            "alpha": 5.0,
+            "budget_values": [5.0, 10.0, 15.0, 20.0, 25.0, 30.0],
             "quality_range": (0, 2),
             "utility_type": utility_type,
         },
@@ -90,8 +90,8 @@ def define_experiments(utility_type: str = "normal") -> Dict[str, dict]:
         "alpha_increase_fixed_budget": {
             "n": 100,
             "m": 8,
-            "budget": 40.0,
-            "alpha_values": [5.0, 10.0, 15.0, 20.0, 25.0, 30.0],
+            "budget": 7.0,
+            "alpha_values": [1.0, 3.0, 5.0, 7.0],
             "quality_range": (0, 2),
             "utility_type": utility_type,
         },
